@@ -84,21 +84,35 @@ void UpdateBall()
     ballVelY -= 0.0003f;
 
     // colisão com paredes
-    if (ballX - ballSize < -0.9f || ballX + ballSize > 0.9f)
-        ballVelX *= -1; // rebater horizontal
+    if (ballX - ballSize < -0.9f) // esquerda
+    {
+        ballX = -0.9f + ballSize;
+        ballVelX *= -1; // inverte velocidade horizontal
+    }
 
+    if (ballX + ballSize > 0.9f) // direita
+    {
+        ballX = 0.9f - ballSize;
+        ballVelX *= -1;
+    }
+
+    // colisão com teto
     if (ballY + ballSize > 1.0f)
     {
-        ballY= 1.0f - ballSize;
-        ballVelY *= -1; // rebater no teto
+        ballY = 1.0f - ballSize;
+        ballVelY *= -1; // inverte velocidade vertical
     }
     if (ballY - ballSize < -0.72f)
     {
-        // bola caiu fora -> resetar
-        ballVelY *= -0.5f;
+        // Bola caiu no chão -> rebate com menos força
+        ballY = -0.72f + ballSize;
+        ballVelY *= -0.75f;
     }
 
     // colisão com a barra
+
+    float paddleHitOffset = (ballX-paddleX) / paddleWidth; // Local da barrinha onde  
+
     if (ballY - ballSize <= paddleY + paddleHeight &&
         ballX >= paddleX - paddleWidth / 2 &&
         ballX <= paddleX + paddleWidth / 2 &&
@@ -106,6 +120,9 @@ void UpdateBall()
     {
         ballVelY *= -1;
         ballY = paddleY + paddleHeight + ballSize; // corrigir posição
+
+        ballVelX += paddleHitOffset * 0.02f;
+
     }
 
     // atualizar geometria
@@ -137,7 +154,12 @@ void UpdateProjectiles()
             p.y >= ballY - ballSize &&
             p.y <= ballY + ballSize)
         {
-            ballVelY = 0.03f;
+            float hitOffset = (p.x - ballX) / ballSize; // Local onde a bolinha foi atingida pelo proj
+
+            ballVelX += hitOffset * 0.02f; // impulso horizontal dependendo de onde a bolinha foi atingida, supostamente tiros mais distantes do centro possuem maior impacto horizontal
+
+            ballVelY = 0.03f; // impulso vertical ao acertar a bolinha
+
             p.active = false;
         }
 
@@ -395,13 +417,13 @@ void RenderFrame()
 
         Vertex projVertices[] =
             {
-                {p.x - projectileSize, p.y + projectileSize, 0.0f},
-                {p.x - projectileSize, p.y - projectileSize, 0.0f},
-                {p.x + projectileSize, p.y - projectileSize, 0.0f},
+                {p.x - (projectileSize*0.8f), p.y + (projectileSize*0.8f), 0.0f},
+                {p.x - (projectileSize*0.8f), p.y - (projectileSize*0.8f), 0.0f},
+                {p.x + (projectileSize*0.8f), p.y - (projectileSize*0.8f), 0.0f},
 
-                {p.x - projectileSize, p.y + projectileSize, 0.0f},
-                {p.x + projectileSize, p.y - projectileSize, 0.0f},
-                {p.x + projectileSize, p.y + projectileSize, 0.0f},
+                {p.x - (projectileSize*0.8f), p.y + (projectileSize*0.8f), 0.0f},
+                {p.x + (projectileSize*0.8f), p.y - (projectileSize*0.8f), 0.0f},
+                {p.x + (projectileSize*0.8f), p.y + (projectileSize*0.8f), 0.0f},
             };
 
         deviceContext->UpdateSubresource(projectileBuffer, 0, nullptr, projVertices, 0, 0);
@@ -483,7 +505,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 {
                     Projectile p;
                     p.x = paddleX;
-                    p.y = paddleY + paddleHeight + 0.05f;
+                    p.y = paddleY + paddleHeight + 0.003f;
                     p.active = true;
                     projectiles.push_back(p);
                 }

@@ -149,12 +149,14 @@ void UpdateProjectiles()
         p.y += projectileSpeed;
 
         // colisão com a bolinha
-        if (p.x >= ballX - ballSize &&
-            p.x <= ballX + ballSize &&
-            p.y >= ballY - ballSize &&
-            p.y <= ballY + ballSize)
+        float hitboxScale = 1.6f;
+        float expandedSize = ballSize * hitboxScale;
+        if (p.x >= ballX - expandedSize &&
+            p.x <= ballX + expandedSize &&
+            p.y >= ballY - expandedSize &&
+            p.y <= ballY + expandedSize)
         {
-            float hitOffset = (p.x - ballX) / ballSize; // Local onde a bolinha foi atingida pelo proj
+            float hitOffset = (p.x - ballX) / expandedSize; // Local onde a bolinha foi atingida pelo proj
 
             ballVelX += hitOffset * 0.02f; // impulso horizontal dependendo de onde a bolinha foi atingida, supostamente tiros mais distantes do centro possuem maior impacto horizontal
 

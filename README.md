@@ -7,7 +7,8 @@ Iniciei este projeto para aprender sobre renderização em directx. A ideia come
 ### Controles:
 
 - Setas esquerda e direita para movimentar a "barra"
-- Controles: Z para atirar, os tiros servem para rebater a bolinha e mais nada
+- Z para atirar, os tiros servem para rebater a bolinha e mais nada
+- X para criar um objeto branco que futuramente será utilizado para rebater a bolinha.
 
 ### To-do:
 
@@ -18,4 +19,4 @@ Iniciei este projeto para aprender sobre renderização em directx. A ideia come
 - Adicionar um Menu com Iniciar / Opções / Fechar / etc
 - Implementar o conceito de Stages / Bosses
 - Adicionar gráficos e sons
-- Se possível, implementar um sistema de Replays que replica os comandos utilizados. Minha teoria é de 
+- Se possível, implementar um sistema de Replays que replica os comandos utilizados. Minha teoria é de para isso será necessário criar uma engine onde todos os eventos são baseados em frames e salvar todos os comandos utilizados em cada frame. Possível que exista uma forma mais simples, mas o importante é que o Replay não deve salvar um vídeo e sim executar os eventos novamente dentro da própria engine.

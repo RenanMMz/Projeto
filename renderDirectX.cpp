@@ -24,6 +24,9 @@ ID3D11Buffer *ballVertexBuffer = nullptr;
 
 ID3D11Buffer *projectileBuffer = nullptr;
 
+ID3D11Buffer *forceFieldBuffer = nullptr;
+ID3D11ShaderResourceView *forceFieldTexture = nullptr;
+
 ID3D11PixelShader *pixelShaderPaddle = nullptr;     // barrinha
 ID3D11PixelShader *pixelShaderBall = nullptr;       // bolinha
 ID3D11PixelShader *pixelShaderProjectile = nullptr; // tirinho
@@ -37,8 +40,8 @@ float projectileSpeed = 0.05f;
 // barrinha
 float paddleX = 0.0f;            // posição horizontal (em coordenadas Normalized Device Coordinates)
 const float paddleY = -0.75f;    // posição fixa no Y
-const float paddleWidth = 0.24f; // largura (0.12 esquerda + 0.12 direita)
-const float paddleHeight = 0.05f;
+const float paddleWidth = 0.10f; // largura (0.5 esquerda + 0.5 direita)
+const float paddleHeight = 0.24f;
 
 // bolinha
 float ballX = 0.0f;
@@ -46,6 +49,13 @@ float ballY = -0.5f; // começa acima da barrinha
 float ballSize = 0.03f;
 float ballVelX = 0.01f;
 float ballVelY = 0.01f;
+
+// shield
+bool forceFieldActive = false;
+float forceFieldRadius = 0.25f;
+float forceFieldTimer = 0.00f;
+float forceFieldY = 0.00f;
+float forceFieldX = 0.00f;
 
 struct Projectile
 {
@@ -81,7 +91,7 @@ void UpdateBall()
 {
     ballX += ballVelX;
     ballY += ballVelY;
-    ballVelY -= 0.0003f;
+    ballVelY -= 0.0005f;
 
     // colisão com paredes
     if (ballX - ballSize < -0.9f) // esquerda
@@ -111,7 +121,7 @@ void UpdateBall()
 
     // colisão com a barra
 
-    float paddleHitOffset = (ballX-paddleX) / paddleWidth; // Local da barrinha onde  
+    float paddleHitOffset = (ballX - paddleX) / paddleWidth; // Local da barrinha onde
 
     if (ballY - ballSize <= paddleY + paddleHeight &&
         ballX >= paddleX - paddleWidth / 2 &&
@@ -122,7 +132,6 @@ void UpdateBall()
         ballY = paddleY + paddleHeight + ballSize; // corrigir posição
 
         ballVelX += paddleHitOffset * 0.02f;
-
     }
 
     // atualizar geometria
@@ -134,6 +143,11 @@ void UpdateBall()
         {ballX - ballSize, ballY + ballSize, 0.0f},
         {ballX + ballSize, ballY - ballSize, 0.0f},
         {ballX + ballSize, ballY + ballSize, 0.0f},
+    };
+
+    if (ballVelX > 0.02f)
+    {
+        ballVelX = 0.02f; // Limita a velocidade horizontal da bolinha para ela não ficar rápida demais, ajustar valor conforme necessário
     };
 
     deviceContext->UpdateSubresource(ballVertexBuffer, 0, nullptr, ballVertices, 0, 0);
@@ -176,6 +190,28 @@ void UpdateProjectiles()
                        [](const Projectile &p)
                        { return !p.active; }),
         projectiles.end());
+}
+
+void UpdateForceField()
+{
+    if (forceFieldActive)
+    {
+        forceFieldX = paddleX;
+        forceFieldY = paddleY + (paddleHeight / 2);
+        forceFieldTimer -= 1;
+        if (forceFieldTimer <= 0)
+        {
+            forceFieldActive = false;
+        }
+    }
+}
+
+void ActivateforceField()
+{
+    forceFieldActive = true;
+    forceFieldX = paddleX;
+    forceFieldY = paddleY + paddleHeight / 2;
+    forceFieldTimer = 60; // Em frames
 }
 
 const char *g_VS =
@@ -379,6 +415,16 @@ bool InitD3D(HWND hWnd)
     if (FAILED(hr))
         return false;
 
+    // vertex buffer do shield
+    D3D11_BUFFER_DESC bdShield = {};
+    bdShield.Usage = D3D11_USAGE_DEFAULT;
+    bdShield.ByteWidth = sizeof(Vertex) * 100; // número suficiente de vértices para o círculo
+    bdShield.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+    hr = device->CreateBuffer(&bdShield, nullptr, &forceFieldBuffer);
+    if (FAILED(hr))
+        return false;
+
     return true;
 }
 
@@ -409,7 +455,6 @@ void RenderFrame()
     deviceContext->Draw(6, 0);
 
     // Desenhar projétil
-
     deviceContext->PSSetShader(pixelShaderProjectile, nullptr, 0);
 
     for (auto &p : projectiles)
@@ -419,19 +464,66 @@ void RenderFrame()
 
         Vertex projVertices[] =
             {
-                {p.x - (projectileSize*0.8f), p.y + (projectileSize*0.8f), 0.0f},
-                {p.x - (projectileSize*0.8f), p.y - (projectileSize*0.8f), 0.0f},
-                {p.x + (projectileSize*0.8f), p.y - (projectileSize*0.8f), 0.0f},
+                {p.x - (projectileSize * 0.8f), p.y + (projectileSize * 0.8f), 0.0f},
+                {p.x - (projectileSize * 0.8f), p.y - (projectileSize * 0.8f), 0.0f},
+                {p.x + (projectileSize * 0.8f), p.y - (projectileSize * 0.8f), 0.0f},
 
-                {p.x - (projectileSize*0.8f), p.y + (projectileSize*0.8f), 0.0f},
-                {p.x + (projectileSize*0.8f), p.y - (projectileSize*0.8f), 0.0f},
-                {p.x + (projectileSize*0.8f), p.y + (projectileSize*0.8f), 0.0f},
+                {p.x - (projectileSize * 0.8f), p.y + (projectileSize * 0.8f), 0.0f},
+                {p.x + (projectileSize * 0.8f), p.y - (projectileSize * 0.8f), 0.0f},
+                {p.x + (projectileSize * 0.8f), p.y + (projectileSize * 0.8f), 0.0f},
             };
 
         deviceContext->UpdateSubresource(projectileBuffer, 0, nullptr, projVertices, 0, 0);
         deviceContext->IASetVertexBuffers(0, 1, &projectileBuffer, &stride, &offset);
         deviceContext->Draw(6, 0);
     }
+
+    // desenhar shield
+    if (forceFieldActive)
+    {
+        deviceContext->PSSetShader(pixelShaderProjectile, nullptr, 0);
+
+        const int segments = 32; // Segmentos para formar o círculo
+
+        std::vector<Vertex> circleVerts;
+
+        // Vértice central
+        circleVerts.push_back({forceFieldX, forceFieldY, 0.0f});
+
+        for (int i = 0; i <= segments; i++)
+        {
+            float theta = (3.14159265f * i) / segments; // arco superior (180°)
+            float x = forceFieldX + cosf(theta) * forceFieldRadius;
+            float y = forceFieldY + sinf(theta) * forceFieldRadius;
+            circleVerts.push_back({x, y, 0.0f});
+        }
+
+        // Triângulos em forma de leque... ou pelo menos era pra ser
+        std::vector<Vertex> fanVerts;
+        for (int i = 1; i <= circleVerts.size(); i++)
+        {
+            fanVerts.push_back(circleVerts[0]);     // centro
+            fanVerts.push_back(circleVerts[i]);     // ponto atual na circunferência
+            fanVerts.push_back(circleVerts[i + 1]); // próximo ponto
+        }
+
+        /*Vertex forceFieldVertices[] =
+            {
+                {forceFieldX - forceFieldRadius, forceFieldY + forceFieldRadius, 0.0f},
+                {forceFieldX - forceFieldRadius, forceFieldY - forceFieldRadius, 0.0f},
+                {forceFieldX + forceFieldRadius, forceFieldY - forceFieldRadius, 0.0f},
+
+                {forceFieldX - forceFieldRadius, forceFieldY + forceFieldRadius, 0.0f},
+                {forceFieldX + forceFieldRadius, forceFieldY - forceFieldRadius, 0.0f},
+                {forceFieldX + forceFieldRadius, forceFieldY + forceFieldRadius, 0.0f},
+            };*/
+        deviceContext->UpdateSubresource(forceFieldBuffer, 0, nullptr, fanVerts.data(), 0, 0);
+        UINT stride = sizeof(Vertex);
+        UINT offset = 0;
+        deviceContext->IASetVertexBuffers(0, 1, &forceFieldBuffer, &stride, &offset);
+        deviceContext->Draw(static_cast<UINT>(fanVerts.size()), 0);
+    }
+
     swapChain->Present(1, 0);
 }
 
@@ -500,6 +592,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         else
         {
             static bool zWasPressed = false;
+            static bool xWasPressed = false;
+            if (GetAsyncKeyState('X') & 0x8000) // X para criar o shield
+            {
+                if (!xWasPressed && !forceFieldActive)
+                {
+                    ActivateforceField();
+                }
+                xWasPressed = true;
+            }
+            else
+            {
+                xWasPressed = false;
+            }
             if (GetAsyncKeyState('Z') & 0x8000) // Z para atirar
             {
 
@@ -535,6 +640,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             UpdatePaddle();
             UpdateBall();
             UpdateProjectiles();
+            UpdateForceField();
             RenderFrame();
         }
     }

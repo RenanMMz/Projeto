@@ -41,7 +41,9 @@ float projectileSpeed = 0.05f;
 float paddleX = 0.0f;            // posição horizontal (em coordenadas Normalized Device Coordinates)
 const float paddleY = -0.75f;    // posição fixa no Y
 const float paddleWidth = 0.10f; // largura (0.5 esquerda + 0.5 direita)
-const float paddleHeight = 0.24f;
+float paddleHeight = 0.24f;
+float paddleHeightNormal = 0.24f;
+float paddleHeightDash = 0.10f;
 
 // bolinha
 float ballX = 0.0f;
@@ -57,6 +59,12 @@ float forceFieldTimer = 0.00f;
 float forceFieldY = 0.00f;
 float forceFieldX = 0.00f;
 
+// rasteira
+bool dashActive = false;
+int dashTimer = 0;
+float dashDir = 0.0f;     // -1 para esquerda, +1 para direita
+float dashSpeed = 0.025f; // velocidade durante a rasteira, só um pouco mais rápido do que a velocidade normal
+
 struct Projectile
 {
     float x, y;
@@ -69,7 +77,27 @@ struct Vertex
 {
     float x, y, z;
 };
+/*
+// checa se ponto P(px,py) está dentro do triângulo p0,p1,p2
+bool PointInTriangle(float px, float py,
+                     float x0, float y0,
+                     float x1, float y1,
+                     float x2, float y2)
+{
+    auto sign = [](float ax, float ay, float bx, float by, float cx, float cy) -> float
+    {
+        return (ax - cx) * (by - cy) - (bx - cx) * (ay - cy);
+    };
+    float d1 = sign(px, py, x0, y0, x1, y1);
+    float d2 = sign(px, py, x1, y1, x2, y2);
+    float d3 = sign(px, py, x2, y2, x0, y0);
 
+    bool has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+    bool has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+
+    return !(has_neg && has_pos);
+}
+*/
 void UpdatePaddle()
 {
     Vertex vertices[] = {
@@ -203,6 +231,55 @@ void UpdateForceField()
         {
             forceFieldActive = false;
         }
+
+        // colisão com a bolinha
+        float dx = ballX - forceFieldX;
+        float dy = ballY - forceFieldY;
+        float distSq = dx * dx + dy * dy;
+        float minDist = forceFieldRadius + ballSize;
+
+        if (distSq < minDist * minDist) // colisão ocorreu
+        {
+            float angle = atan2f(dy, dx);
+            if (angle >= 0 && angle <= 3.14159265f) // parte superior do shield
+            {
+                float dist = sqrtf(distSq);
+                if (dist == 0.0f)
+                    dist = 0.00001f; // evita divisão por zero
+
+                float nx = dx / dist;
+                float ny = dy / dist;
+
+                // Reposiciona a bola para fora do shield
+                ballX = forceFieldX + nx * (minDist);
+                ballY = forceFieldY + ny * (minDist);
+
+                // Reflete a velocidade da bolinha
+                float dot = ballVelX * nx + ballVelY * ny;
+                ballVelX -= 2 * dot * nx;
+                ballVelY -= 2 * dot * ny;
+
+                // Impulso extra (get parried idiot)
+                ballVelX += nx * 0.01f;
+                ballVelY += ny * 0.01f;
+            }
+        }
+    }
+}
+
+void UpdateDash()
+{
+    if (dashActive)
+    {
+        paddleHeight = paddleHeightDash;
+        dashTimer -= 1;
+        if (dashTimer <= 0)
+        {
+            dashActive = false;
+            paddleHeight = paddleHeightNormal;
+        }
+
+        paddleX += (dashDir*dashSpeed);
     }
 }
 
@@ -212,6 +289,12 @@ void ActivateforceField()
     forceFieldX = paddleX;
     forceFieldY = paddleY + paddleHeight / 2;
     forceFieldTimer = 60; // Em frames
+}
+
+void ActivateDash()
+{
+    dashActive = true;
+    dashTimer = 30;
 }
 
 const char *g_VS =
@@ -418,7 +501,7 @@ bool InitD3D(HWND hWnd)
     // vertex buffer do shield
     D3D11_BUFFER_DESC bdShield = {};
     bdShield.Usage = D3D11_USAGE_DEFAULT;
-    bdShield.ByteWidth = sizeof(Vertex) * 100; // número suficiente de vértices para o círculo
+    bdShield.ByteWidth = sizeof(Vertex) * (32 + 2) * 3; // número suficiente de vértices para o círculo
     bdShield.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 
     hr = device->CreateBuffer(&bdShield, nullptr, &forceFieldBuffer);
@@ -500,7 +583,7 @@ void RenderFrame()
 
         // Triângulos em forma de leque... ou pelo menos era pra ser
         std::vector<Vertex> fanVerts;
-        for (int i = 1; i <= circleVerts.size(); i++)
+        for (int i = 1; i < circleVerts.size() - 1; i++)
         {
             fanVerts.push_back(circleVerts[0]);     // centro
             fanVerts.push_back(circleVerts[i]);     // ponto atual na circunferência
@@ -593,7 +676,42 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         {
             static bool zWasPressed = false;
             static bool xWasPressed = false;
-            if (GetAsyncKeyState('X') & 0x8000) // X para criar o shield
+            if (GetAsyncKeyState('X') & 0x8000) // Deve priorizar o dash acima do Shield
+            {
+                if (!xWasPressed)
+                {
+                    if (!forceFieldActive) // Shield não deve estar ativo
+                    {
+                        if (GetAsyncKeyState(VK_LEFT) & 0x8000)
+                        {
+                            // dashActive = true;
+                            dashDir = -1.0f; // esquerda
+                            // dashTimer = 20;
+                            // paddleHeight = paddleHeightDash;
+                            ActivateDash();
+                        }
+                        else if (GetAsyncKeyState(VK_RIGHT) & 0x8000)
+                        {
+                            // dashActive = true;
+                            dashDir = 1.0f; // direita
+                            // dashTimer = 20;
+                            // paddleHeight = paddleHeightDash;
+                            ActivateDash();
+                        }
+                        else
+                        {
+                            // sem direção = shield
+                            ActivateforceField();
+                        }
+                    }
+                }
+                xWasPressed = true;
+            }
+            else
+            {
+                xWasPressed = false;
+            }
+            /*if (GetAsyncKeyState('X') & 0x8000) // X para criar o shield
             {
                 if (!xWasPressed && !forceFieldActive)
                 {
@@ -604,7 +722,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             else
             {
                 xWasPressed = false;
-            }
+            }*/
             if (GetAsyncKeyState('Z') & 0x8000) // Z para atirar
             {
 
@@ -622,14 +740,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             {
                 zWasPressed = false;
             }
-
-            if (GetAsyncKeyState(VK_LEFT) & 0x8000)
+            if (!forceFieldActive && !dashActive) // movimentação é bloqueada enquanto o escudo estiver ativo
             {
-                paddleX -= 0.02f; // velocidade
-            }
-            if (GetAsyncKeyState(VK_RIGHT) & 0x8000)
-            {
-                paddleX += 0.02f; // velocidade
+                if (GetAsyncKeyState(VK_LEFT) & 0x8000)
+                {
+                    paddleX -= 0.02f; // velocidade para a esquerda
+                }
+                if (GetAsyncKeyState(VK_RIGHT) & 0x8000)
+                {
+                    paddleX += 0.02f; // velocidade para a direita
+                }
             }
             // Limite para não sair da tela
             if (paddleX - paddleWidth / 2 < -0.90f)
@@ -641,6 +761,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             UpdateBall();
             UpdateProjectiles();
             UpdateForceField();
+            UpdateDash();
             RenderFrame();
         }
     }

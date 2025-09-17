@@ -81,27 +81,19 @@ struct Vertex
     float x, y, z;
 };
 
-/*
-// checa se ponto P(px,py) está dentro do triângulo p0,p1,p2
-bool PointInTriangle(float px, float py,
-                     float x0, float y0,
-                     float x1, float y1,
-                     float x2, float y2)
+bool CircleRectCollision(float cx, float cy, float radius,
+                         float rx, float ry, float rw, float rh)
 {
-    auto sign = [](float ax, float ay, float bx, float by, float cx, float cy) -> float
-    {
-        return (ax - cx) * (by - cy) - (bx - cx) * (ay - cy);
-    };
-    float d1 = sign(px, py, x0, y0, x1, y1);
-    float d2 = sign(px, py, x1, y1, x2, y2);
-    float d3 = sign(px, py, x2, y2, x0, y0);
+    // ponto mais próximo dentro do retângulo ao centro do círculo
+    float closestX = max(rx, min(cx, rx + rw));
+    float closestY = max(ry, min(cy, ry + rh));
 
-    bool has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
-    bool has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+    // distância até esse ponto
+    float dx = cx - closestX;
+    float dy = cy - closestY;
 
-    return !(has_neg && has_pos);
+    return (dx * dx + dy * dy) < (radius * radius);
 }
-*/
 
 void UpdatePaddle()
 {
@@ -276,6 +268,28 @@ void UpdateDash()
 {
     if (dashActive)
     {
+        float shieldWidth = 0.25f;
+        float shieldHeight = 0.15f;
+
+        float shieldY = paddleY;
+        float rx = paddleX - shieldWidth / 2.0f;
+        float ry = shieldY;
+        float rw = shieldWidth;
+        float rh = shieldHeight;
+
+        if (CircleRectCollision(ballX, ballY, ballSize, rx, ry, rw, rh))
+        {
+            // reposiciona a bolinha para fora do dashShield
+            ballY = ry + rh + ballSize+0.001f;
+
+            // rebote vertical (sempre para cima, a rasteira serve para levantar a bola)
+            ballVelY = 0.02f;
+
+            // variação horizontal conforme a posição do impacto
+            float hitOffset = (ballX - paddleX) / (shieldWidth / 2.0f);
+            ballVelX += hitOffset * 0.02f;
+        }
+
         paddleHeight = paddleHeightDash;
         dashTimer -= 1;
         if (dashTimer <= 0)
@@ -645,8 +659,7 @@ void RenderFrame()
         UINT stride = sizeof(Vertex);
         UINT offset = 0;
         deviceContext->IASetVertexBuffers(0, 1, &dashShieldBuffer, &stride, &offset);
-        deviceContext->Draw(6,0);
-
+        deviceContext->Draw(6, 0);
     }
 
     swapChain->Present(1, 0);

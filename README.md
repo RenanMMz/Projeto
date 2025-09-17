@@ -7,8 +7,9 @@ Iniciei este projeto para aprender sobre renderização em directx. A ideia come
 ### Controles:
 
 - Setas esquerda e direita para movimentar a "barra"
-- Z para atirar, os tiros servem para rebater a bolinha e mais nada
-- X para criar um objeto branco que futuramente será utilizado para rebater a bolinha.
+- Z para atirar, os tiros servem para rebater a bolinha
+- X para criar um escudo circular na frente da barrinha
+- Direção + X para dar uma "rasteira" no chão que serve para levantar a bola
 
 ### To-do:
 

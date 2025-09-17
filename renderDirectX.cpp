@@ -10,6 +10,7 @@
 #pragma comment(lib, "gdi32.lib")
 
 // Variáveis globais DirectX
+
 IDXGISwapChain *swapChain = nullptr;
 ID3D11Device *device = nullptr;
 ID3D11DeviceContext *deviceContext = nullptr;
@@ -30,6 +31,8 @@ ID3D11ShaderResourceView *forceFieldTexture = nullptr;
 ID3D11PixelShader *pixelShaderPaddle = nullptr;     // barrinha
 ID3D11PixelShader *pixelShaderBall = nullptr;       // bolinha
 ID3D11PixelShader *pixelShaderProjectile = nullptr; // tirinho
+ID3D11Buffer *dashShieldBuffer = nullptr;
+
 // tirinho
 bool projectileActive = false;
 float projectileX = 0.0f;
@@ -77,6 +80,7 @@ struct Vertex
 {
     float x, y, z;
 };
+
 /*
 // checa se ponto P(px,py) está dentro do triângulo p0,p1,p2
 bool PointInTriangle(float px, float py,
@@ -98,6 +102,7 @@ bool PointInTriangle(float px, float py,
     return !(has_neg && has_pos);
 }
 */
+
 void UpdatePaddle()
 {
     Vertex vertices[] = {
@@ -279,7 +284,7 @@ void UpdateDash()
             paddleHeight = paddleHeightNormal;
         }
 
-        paddleX += (dashDir*dashSpeed);
+        paddleX += (dashDir * dashSpeed);
     }
 }
 
@@ -485,7 +490,6 @@ bool InitD3D(HWND hWnd)
         return false;
 
     // Criar vertex buffer da barrinha
-
     D3D11_BUFFER_DESC bdPaddle = {};
     bdPaddle.Usage = D3D11_USAGE_DEFAULT;
     bdPaddle.ByteWidth = sizeof(Vertex) * _countof(vertices);
@@ -505,6 +509,16 @@ bool InitD3D(HWND hWnd)
     bdShield.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 
     hr = device->CreateBuffer(&bdShield, nullptr, &forceFieldBuffer);
+    if (FAILED(hr))
+        return false;
+
+    // vertex buffer do shield horizontal
+    D3D11_BUFFER_DESC bdDashShield = {};
+    bdDashShield.Usage = D3D11_USAGE_DEFAULT;
+    bdDashShield.ByteWidth = sizeof(Vertex) * _countof(vertices);
+    bdShield.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+    hr = device->CreateBuffer(&bdDashShield, nullptr, &dashShieldBuffer);
     if (FAILED(hr))
         return false;
 
@@ -605,6 +619,34 @@ void RenderFrame()
         UINT offset = 0;
         deviceContext->IASetVertexBuffers(0, 1, &forceFieldBuffer, &stride, &offset);
         deviceContext->Draw(static_cast<UINT>(fanVerts.size()), 0);
+    }
+
+    if (dashActive)
+    {
+        deviceContext->PSSetShader(pixelShaderProjectile, nullptr, 0); // renderiza o treco branco
+
+        float shieldWidth = 0.25f;  // largura, a ideia é que esse tamanho deve simular a barrinha "deitada" no chão
+        float shieldHeight = 0.15f; // Altura, um pouco maior do que a barrinha
+        float shieldY = paddleY;    // mesma altura do "pé" da barrinha, ajustar conforme necessário
+
+        Vertex dashShieldVerts[] = {
+            // começarei com um retângulo pq já tenho a base dele no Paddle em si, depois penso numa forma de colocar um triângulo que rotaciona dependendo da direção do dash
+            {paddleX - shieldWidth / 2, shieldY + shieldHeight, 0.0f}, // esquerda cima
+            {paddleX - shieldWidth / 2, shieldY, 0.0f},                // esquerda baixo
+            {paddleX + shieldWidth / 2, shieldY, 0.0f},                // direita baixo
+
+            // Triângulo 2
+            {paddleX - shieldWidth / 2, shieldY + shieldHeight, 0.0f}, // esquerda cima
+            {paddleX + shieldWidth / 2, shieldY, 0.0f},                // direita baixo
+            {paddleX + shieldWidth / 2, shieldY + shieldHeight, 0.0f}  // direita cima
+        };
+
+        deviceContext->UpdateSubresource(dashShieldBuffer, 0, nullptr, dashShieldVerts, 0, 0);
+        UINT stride = sizeof(Vertex);
+        UINT offset = 0;
+        deviceContext->IASetVertexBuffers(0, 1, &dashShieldBuffer, &stride, &offset);
+        deviceContext->Draw(6,0);
+
     }
 
     swapChain->Present(1, 0);

@@ -16,22 +16,37 @@ ID3D11Device *device = nullptr;
 ID3D11DeviceContext *deviceContext = nullptr;
 ID3D11RenderTargetView *renderTargetView = nullptr;
 
-ID3D11Buffer *vertexBuffer = nullptr;
 ID3D11VertexShader *vertexShader = nullptr;
-ID3D11PixelShader *pixelShader = nullptr;
+
 ID3D11InputLayout *inputLayout = nullptr;
 ID3D11RasterizerState *rasterState = nullptr;
-ID3D11Buffer *ballVertexBuffer = nullptr;
 
-ID3D11Buffer *projectileBuffer = nullptr;
-
-ID3D11Buffer *forceFieldBuffer = nullptr;
 ID3D11ShaderResourceView *forceFieldTexture = nullptr;
 
+ID3D11Buffer *vertexBuffer = nullptr;
+ID3D11Buffer *ballVertexBuffer = nullptr;
+ID3D11Buffer *projectileBuffer = nullptr;
+ID3D11Buffer *forceFieldBuffer = nullptr;
+ID3D11Buffer *dashShieldBuffer = nullptr;
+
+ID3D11PixelShader *pixelShader = nullptr;
 ID3D11PixelShader *pixelShaderPaddle = nullptr;     // barrinha
 ID3D11PixelShader *pixelShaderBall = nullptr;       // bolinha
 ID3D11PixelShader *pixelShaderProjectile = nullptr; // tirinho
-ID3D11Buffer *dashShieldBuffer = nullptr;
+
+//gamestate - Possível que essas variáveis devem ficar salvas em arquivo de "save"?
+int gameState = 0; //0 = null, 1 = menu, 2 = rodando, 3 = pause
+int gameMode = 0; //Dificuldades?
+bool timeout = false; //tempo acaba = "desperation"
+int stage = 0; // seletor de stage
+int life = 0; // vidas, = 0 skill issue
+int timer = 0; // timer de cada stage, começa em X e vai a 0 onde a variável vira True
+int bossHP = 0; // 
+int tiles = 0; // blocos restantes, 0 = next
+int timeCount = 0; //conta o tempo total
+int menuOpt = 0; // Não sei se será utilizado, mas tecnicamente pode ser utilizado para definir qual opção da lista será selecionada
+int score = 0;
+int highScore = 0; // novamente não sei se isso vai resetar o valor de HS sempre que reabrir. Devo salvar em um arquivo separado e buscar o valor?
 
 // tirinho
 bool projectileActive = false;
@@ -57,7 +72,7 @@ float ballVelY = 0.01f;
 
 // shield
 bool forceFieldActive = false;
-float forceFieldRadius = 0.25f;
+float forceFieldRadius = 0.20f;
 float forceFieldTimer = 0.00f;
 float forceFieldY = 0.00f;
 float forceFieldX = 0.00f;
@@ -306,8 +321,8 @@ void ActivateforceField()
 {
     forceFieldActive = true;
     forceFieldX = paddleX;
-    forceFieldY = paddleY + paddleHeight / 2;
-    forceFieldTimer = 60; // Em frames
+    forceFieldY = paddleY + paddleHeight *0.7f;
+    forceFieldTimer = 30; // Em frames
 }
 
 void ActivateDash()
@@ -603,7 +618,7 @@ void RenderFrame()
 
         for (int i = 0; i <= segments; i++)
         {
-            float theta = (3.14159265f * i) / segments; // arco superior (180°)
+            float theta = (2*3.14159265f * i) / segments; // arco superior (180°)
             float x = forceFieldX + cosf(theta) * forceFieldRadius;
             float y = forceFieldY + sinf(theta) * forceFieldRadius;
             circleVerts.push_back({x, y, 0.0f});

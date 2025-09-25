@@ -44,9 +44,10 @@ int timer = 0; // timer de cada stage, começa em X e vai a 0 onde a variável v
 int bossHP = 0; // 
 int tiles = 0; // blocos restantes, 0 = next
 int timeCount = 0; //conta o tempo total
-int menuOpt = 0; // Não sei se será utilizado, mas tecnicamente pode ser utilizado para definir qual opção da lista será selecionada
+int menuOption = 0; // Não sei se será utilizado, mas tecnicamente pode ser utilizado para definir qual opção da lista será selecionada
 int score = 0;
-int highScore = 0; // novamente não sei se isso vai resetar o valor de HS sempre que reabrir. Devo salvar em um arquivo separado e buscar o valor?
+int highScore = 0; // Ainda não sei se isso vai resetar o valor de HS sempre que reabrir. Devo salvar em um arquivo separado e buscar o valor?
+int combo = 0; // multiplicador de score, reseta quando a bolinha cai no chão sem ser rebatida
 
 // tirinho
 bool projectileActive = false;
@@ -56,23 +57,23 @@ float projectileSize = 0.02f;
 float projectileSpeed = 0.05f;
 
 // barrinha
-float paddleX = 0.0f;            // posição horizontal (em coordenadas Normalized Device Coordinates)
-const float paddleY = -0.75f;    // posição fixa no Y
-const float paddleWidth = 0.10f; // largura (0.5 esquerda + 0.5 direita)
-float paddleHeight = 0.24f;
-float paddleHeightNormal = 0.24f;
-float paddleHeightDash = 0.10f;
+float paddleX = 0.0f;            // posição horizontal (começa no meio)
+const float paddleY = -0.75f;    // posição fixa vertical
+const float paddleWidth = 0.08f; // largura (0.04 esquerda + 0.04 direita)
+float paddleHeight = 0.20f;
+float paddleHeightNormal = 0.20f;
+float paddleHeightDash = 0.08f;
 
 // bolinha
 float ballX = 0.0f;
 float ballY = -0.5f; // começa acima da barrinha
 float ballSize = 0.03f;
-float ballVelX = 0.01f;
+float ballVelX = 0.008f;
 float ballVelY = 0.01f;
 
 // shield
 bool forceFieldActive = false;
-float forceFieldRadius = 0.20f;
+float forceFieldRadius = 0.15f;
 float forceFieldTimer = 0.00f;
 float forceFieldY = 0.00f;
 float forceFieldX = 0.00f;
@@ -81,7 +82,7 @@ float forceFieldX = 0.00f;
 bool dashActive = false;
 int dashTimer = 0;
 float dashDir = 0.0f;     // -1 para esquerda, +1 para direita
-float dashSpeed = 0.025f; // velocidade durante a rasteira, só um pouco mais rápido do que a velocidade normal
+float dashSpeed = 0.015f; // velocidade durante a rasteira, só um pouco mais rápido do que a velocidade normal
 
 struct Projectile
 {
@@ -152,26 +153,27 @@ void UpdateBall()
         ballY = 1.0f - ballSize;
         ballVelY *= -1; // inverte velocidade vertical
     }
+
+    // Bola caiu no chão
     if (ballY - ballSize < -0.72f)
     {
-        // Bola caiu no chão -> rebate com menos força
         ballY = -0.72f + ballSize;
         ballVelY *= -0.75f;
     }
 
     // colisão com a barra
 
-    float paddleHitOffset = (ballX - paddleX) / paddleWidth; // Local da barrinha onde
+    float paddleHitOffset = (ballX - paddleX) / paddleWidth; // Local da barrinha
 
     if (ballY - ballSize <= paddleY + paddleHeight &&
         ballX >= paddleX - paddleWidth / 2 &&
         ballX <= paddleX + paddleWidth / 2 &&
-        ballY > paddleY) // para não "colar"
+        ballY > paddleY)
     {
         ballVelY *= -1;
         ballY = paddleY + paddleHeight + ballSize; // corrigir posição
 
-        ballVelX += paddleHitOffset * 0.02f;
+        ballVelX += paddleHitOffset * 0.015f;
     }
 
     // atualizar geometria
@@ -203,7 +205,7 @@ void UpdateProjectiles()
         p.y += projectileSpeed;
 
         // colisão com a bolinha
-        float hitboxScale = 1.6f;
+        float hitboxScale = 2.0f;
         float expandedSize = ballSize * hitboxScale;
         if (p.x >= ballX - expandedSize &&
             p.x <= ballX + expandedSize &&
@@ -212,9 +214,9 @@ void UpdateProjectiles()
         {
             float hitOffset = (p.x - ballX) / expandedSize; // Local onde a bolinha foi atingida pelo proj
 
-            ballVelX += hitOffset * 0.02f; // impulso horizontal dependendo de onde a bolinha foi atingida, supostamente tiros mais distantes do centro possuem maior impacto horizontal
+            ballVelX += hitOffset * -0.01f; // impulso horizontal dependendo de onde a bolinha foi atingida.
 
-            ballVelY = 0.03f; // impulso vertical ao acertar a bolinha
+            ballVelY = 0.025f; // impulso vertical ao acertar a bolinha
 
             p.active = false;
         }
@@ -253,7 +255,7 @@ void UpdateForceField()
         if (distSq < minDist * minDist) // colisão ocorreu
         {
             float angle = atan2f(dy, dx);
-            if (angle >= 0 && angle <= 3.14159265f) // parte superior do shield
+            if (angle >= -3.14159265f && angle <= 3.14159265f) // ">=" é a parte inferior do círculo, "<=" é a parte superior. Igualar um dos valores a 0 faz o cálculo desconsiderar aquela parte do círculo
             {
                 float dist = sqrtf(distSq);
                 if (dist == 0.0f)
@@ -814,11 +816,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             {
                 if (GetAsyncKeyState(VK_LEFT) & 0x8000)
                 {
-                    paddleX -= 0.02f; // velocidade para a esquerda
+                    paddleX -= 0.01f; // velocidade para a esquerda
                 }
                 if (GetAsyncKeyState(VK_RIGHT) & 0x8000)
                 {
-                    paddleX += 0.02f; // velocidade para a direita
+                    paddleX += 0.01f; // velocidade para a direita
                 }
             }
             // Limite para não sair da tela

@@ -8,7 +8,7 @@ Iniciei este projeto para aprender sobre renderização em directx. A ideia come
 
 - Setas esquerda e direita para movimentar a "barra"
 - Z para atirar, os tiros servem para rebater a bolinha
-- X para criar um escudo circular na frente da barrinha
+- X para criar um escudo circular em volta da barrinha
 - Direção + X para dar uma "rasteira" no chão que serve para levantar a bola
 
 ### To-do:

@@ -11,6 +11,8 @@
 
 // Variáveis globais DirectX
 
+HWND g_hWnd = nullptr;
+
 IDXGISwapChain *swapChain = nullptr;
 ID3D11Device *device = nullptr;
 ID3D11DeviceContext *deviceContext = nullptr;
@@ -34,20 +36,22 @@ ID3D11PixelShader *pixelShaderPaddle = nullptr;     // barrinha
 ID3D11PixelShader *pixelShaderBall = nullptr;       // bolinha
 ID3D11PixelShader *pixelShaderProjectile = nullptr; // tirinho
 
-//gamestate - Possível que essas variáveis devem ficar salvas em arquivo de "save"?
-int gameState = 0; //0 = null, 1 = menu, 2 = rodando, 3 = pause
-int gameMode = 0; //Dificuldades?
-bool timeout = false; //tempo acaba = "desperation"
-int stage = 0; // seletor de stage
-int life = 0; // vidas, = 0 skill issue
-int timer = 0; // timer de cada stage, começa em X e vai a 0 onde a variável vira True
-int bossHP = 0; // 
-int tiles = 0; // blocos restantes, 0 = next
-int timeCount = 0; //conta o tempo total
-int menuOption = 0; // Não sei se será utilizado, mas tecnicamente pode ser utilizado para definir qual opção da lista será selecionada
+// gamestate - Possível que essas variáveis devem ficar salvas em arquivo de "save"?
+int gameState = 0;    // 0 = null, 1 = menu, 2 = rodando, 3 = pause
+int gameMode = 0;     // Dificuldades?
+bool timeout = false; // tempo acaba = "desperation"
+int stage = 0;        // seletor de stage
+int life = 0;         // vidas, = 0 skill issue
+int timer = 0;        // timer de cada stage, começa em X e vai a 0 onde a variável vira True
+int bossHP = 0;       //
+int tiles = 0;        // blocos restantes, 0 = next
+int timeCount = 0;    // conta o tempo total
+int menuOption = 0;   // Não sei se será utilizado, mas tecnicamente pode ser utilizado para definir qual opção da lista será selecionada
 int score = 0;
 int highScore = 0; // Ainda não sei se isso vai resetar o valor de HS sempre que reabrir. Devo salvar em um arquivo separado e buscar o valor?
-int combo = 0; // multiplicador de score, reseta quando a bolinha cai no chão sem ser rebatida
+int combo = 0;     // multiplicador de score, reseta quando a bolinha cai no chão sem ser rebatida
+bool iFrame = false;
+int iFrameTimer = 0;
 
 // tirinho
 bool projectileActive = false;
@@ -111,6 +115,29 @@ bool CircleRectCollision(float cx, float cy, float radius,
     return (dx * dx + dy * dy) < (radius * radius);
 }
 
+void DrawLives (HWND hwnd, int life) {
+    HDC hdc = GetDC(hwnd);
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(255, 255, 255));
+
+    wchar_t buffer[32];
+    swprintf(buffer, 32, L"Lives: %d", life);
+
+    TextOutW(hdc, 10, 10, buffer, wcslen(buffer));
+    ReleaseDC(hwnd, hdc);
+}
+
+
+void UpdateIFrame()
+{
+    if (iFrame)
+    {
+        iFrameTimer -= 1;
+        if (iFrameTimer >= 0)
+            iFrame = false;
+    }
+}
+
 void UpdatePaddle()
 {
     Vertex vertices[] = {
@@ -132,7 +159,7 @@ void UpdateBall()
 {
     ballX += ballVelX;
     ballY += ballVelY;
-    ballVelY -= 0.0005f;
+    ballVelY -= 0.0007f;
 
     // colisão com paredes
     if (ballX - ballSize < -0.9f) // esquerda
@@ -158,7 +185,7 @@ void UpdateBall()
     if (ballY - ballSize < -0.72f)
     {
         ballY = -0.72f + ballSize;
-        ballVelY *= -0.75f;
+        ballVelY *= -0.80f;
     }
 
     // colisão com a barra
@@ -174,6 +201,13 @@ void UpdateBall()
         ballY = paddleY + paddleHeight + ballSize; // corrigir posição
 
         ballVelX += paddleHitOffset * 0.015f;
+
+        if (!iFrame)
+        {
+            iFrame = true;
+            iFrameTimer = 60;
+            life -= 1;
+        }
     }
 
     // atualizar geometria
@@ -216,7 +250,7 @@ void UpdateProjectiles()
 
             ballVelX += hitOffset * -0.01f; // impulso horizontal dependendo de onde a bolinha foi atingida.
 
-            ballVelY = 0.025f; // impulso vertical ao acertar a bolinha
+            ballVelY = 0.030f; // impulso vertical ao acertar a bolinha
 
             p.active = false;
         }
@@ -297,14 +331,14 @@ void UpdateDash()
         if (CircleRectCollision(ballX, ballY, ballSize, rx, ry, rw, rh))
         {
             // reposiciona a bolinha para fora do dashShield
-            ballY = ry + rh + ballSize+0.001f;
+            ballY = ry + rh + ballSize + 0.001f;
 
             // rebote vertical (sempre para cima, a rasteira serve para levantar a bola)
-            ballVelY = 0.02f;
+            ballVelY = 0.03f;
 
-            // variação horizontal conforme a posição do impacto
-            float hitOffset = (ballX - paddleX) / (shieldWidth / 2.0f);
-            ballVelX += hitOffset * 0.02f;
+            // variação horizontal conforme a direção do dash
+            float hitOffset = dashDir * -1.0f;
+            ballVelX += hitOffset * -0.02f;
         }
 
         paddleHeight = paddleHeightDash;
@@ -323,7 +357,7 @@ void ActivateforceField()
 {
     forceFieldActive = true;
     forceFieldX = paddleX;
-    forceFieldY = paddleY + paddleHeight *0.7f;
+    forceFieldY = paddleY + paddleHeight * 0.7f;
     forceFieldTimer = 30; // Em frames
 }
 
@@ -620,15 +654,15 @@ void RenderFrame()
 
         for (int i = 0; i <= segments; i++)
         {
-            float theta = (2*3.14159265f * i) / segments; // arco superior (180°)
+            float theta = (2 * 3.14159265f * i) / segments; // Círculo inteiro pois o PI está sendo multiplicado por 2, para um meio-círculo não multiplicar por 2
             float x = forceFieldX + cosf(theta) * forceFieldRadius;
             float y = forceFieldY + sinf(theta) * forceFieldRadius;
             circleVerts.push_back({x, y, 0.0f});
         }
 
-        // Triângulos em forma de leque... ou pelo menos era pra ser
+        // Loop para formar o círculo
         std::vector<Vertex> fanVerts;
-        for (int i = 1; i < circleVerts.size() - 1; i++)
+        for (int i = 1; i < circleVerts.size() - 1; i++) // .size() -1 para o último passo não ficar OOB
         {
             fanVerts.push_back(circleVerts[0]);     // centro
             fanVerts.push_back(circleVerts[i]);     // ponto atual na circunferência
@@ -680,6 +714,7 @@ void RenderFrame()
     }
 
     swapChain->Present(1, 0);
+    DrawLives(g_hWnd, life);
 }
 
 // Libera DirectX
@@ -731,6 +766,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     ShowWindow(hWnd, nCmdShow);
 
+    g_hWnd = hWnd;
     // Inicializa DirectX
     if (!InitD3D(hWnd))
         return 0;
@@ -834,6 +870,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             UpdateProjectiles();
             UpdateForceField();
             UpdateDash();
+            UpdateIFrame();
             RenderFrame();
         }
     }

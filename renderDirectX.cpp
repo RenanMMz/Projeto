@@ -86,7 +86,7 @@ float forceFieldX = 0.00f;
 bool dashActive = false;
 int dashTimer = 0;
 float dashDir = 0.0f;     // -1 para esquerda, +1 para direita
-float dashSpeed = 0.015f; // velocidade durante a rasteira, só um pouco mais rápido do que a velocidade normal
+float dashSpeed = 0.025f; // velocidade durante a rasteira, só um pouco mais rápido do que a velocidade normal
 
 struct Projectile
 {
@@ -133,7 +133,7 @@ void UpdateIFrame()
     if (iFrame)
     {
         iFrameTimer -= 1;
-        if (iFrameTimer >= 0)
+        if (iFrameTimer <= 0)
             iFrame = false;
     }
 }
@@ -205,7 +205,7 @@ void UpdateBall()
         if (!iFrame)
         {
             iFrame = true;
-            iFrameTimer = 60;
+            iFrameTimer = 60*5;
             life -= 1;
         }
     }
@@ -221,9 +221,9 @@ void UpdateBall()
         {ballX + ballSize, ballY + ballSize, 0.0f},
     };
 
-    if (ballVelX > 0.02f)
+    if (ballVelX > 0.03f)
     {
-        ballVelX = 0.02f; // Limita a velocidade horizontal da bolinha para ela não ficar rápida demais, ajustar valor conforme necessário
+        ballVelX = 0.03f; // Limita a velocidade horizontal da bolinha para ela não ficar rápida demais, ajustar valor conforme necessário
     };
 
     deviceContext->UpdateSubresource(ballVertexBuffer, 0, nullptr, ballVertices, 0, 0);
@@ -358,13 +358,13 @@ void ActivateforceField()
     forceFieldActive = true;
     forceFieldX = paddleX;
     forceFieldY = paddleY + paddleHeight * 0.7f;
-    forceFieldTimer = 30; // Em frames
+    forceFieldTimer = 10; // Em frames
 }
 
 void ActivateDash()
 {
     dashActive = true;
-    dashTimer = 30;
+    dashTimer = 15;
 }
 
 const char *g_VS =
@@ -806,11 +806,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             // paddleHeight = paddleHeightDash;
                             ActivateDash();
                         }
-                        else
+                        else if (!dashActive)
                         {
                             // sem direção = shield
                             ActivateforceField();
                         }
+
                     }
                 }
                 xWasPressed = true;

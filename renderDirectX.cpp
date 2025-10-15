@@ -25,12 +25,14 @@ ID3D11RasterizerState *rasterState = nullptr;
 
 ID3D11ShaderResourceView *forceFieldTexture = nullptr;
 
+ID3D11Buffer *obstacleBuffer = nullptr;
 ID3D11Buffer *vertexBuffer = nullptr;
 ID3D11Buffer *ballVertexBuffer = nullptr;
 ID3D11Buffer *projectileBuffer = nullptr;
 ID3D11Buffer *forceFieldBuffer = nullptr;
 ID3D11Buffer *dashShieldBuffer = nullptr;
 
+ID3D11PixelShader *pixelShaderObstacle = nullptr;
 ID3D11PixelShader *pixelShader = nullptr;
 ID3D11PixelShader *pixelShaderPaddle = nullptr;     // barrinha
 ID3D11PixelShader *pixelShaderBall = nullptr;       // bolinha
@@ -38,7 +40,7 @@ ID3D11PixelShader *pixelShaderProjectile = nullptr; // tirinho
 
 // gamestate - Possível que essas variáveis devem ficar salvas em arquivo de "save"?
 int gameState = 0;    // 0 = null, 1 = menu, 2 = rodando, 3 = pause
-int gameMode = 0;     // Dificuldades?
+int gameMode = 0;     // Dificuldades? Obviamente uma delas terá que se chamar "Lunatic"
 bool timeout = false; // tempo acaba = "desperation"
 int stage = 0;        // seletor de stage
 int life = 0;         // vidas, = 0 skill issue
@@ -67,6 +69,7 @@ const float paddleWidth = 0.08f; // largura (0.04 esquerda + 0.04 direita)
 float paddleHeight = 0.20f;
 float paddleHeightNormal = 0.20f;
 float paddleHeightDash = 0.08f;
+bool paddleVisible = true;
 
 // bolinha
 float ballX = 0.0f;
@@ -77,7 +80,7 @@ float ballVelY = 0.01f;
 
 // shield
 bool forceFieldActive = false;
-float forceFieldRadius = 0.15f;
+float forceFieldRadius = 0.20f;
 float forceFieldTimer = 0.00f;
 float forceFieldY = 0.00f;
 float forceFieldX = 0.00f;
@@ -115,7 +118,8 @@ bool CircleRectCollision(float cx, float cy, float radius,
     return (dx * dx + dy * dy) < (radius * radius);
 }
 
-void DrawLives (HWND hwnd, int life) {
+void DrawLives(HWND hwnd, int life)
+{
     HDC hdc = GetDC(hwnd);
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, RGB(255, 255, 255));
@@ -127,32 +131,38 @@ void DrawLives (HWND hwnd, int life) {
     ReleaseDC(hwnd, hdc);
 }
 
-
 void UpdateIFrame()
 {
     if (iFrame)
     {
+        paddleVisible = !paddleVisible;
         iFrameTimer -= 1;
         if (iFrameTimer <= 0)
+        {
             iFrame = false;
+            paddleVisible = true;
+        }
     }
 }
 
 void UpdatePaddle()
 {
-    Vertex vertices[] = {
-        // Triângulo 1
-        {paddleX - paddleWidth / 2, paddleY + paddleHeight, 0.0f}, // esquerda cima
-        {paddleX - paddleWidth / 2, paddleY, 0.0f},                // esquerda baixo
-        {paddleX + paddleWidth / 2, paddleY, 0.0f},                // direita baixo
+    if (paddleVisible == true)
+    {
+        Vertex vertices[] = {
+            // Triângulo 1
+            {paddleX - paddleWidth / 2, paddleY + paddleHeight, 0.0f}, // esquerda cima
+            {paddleX - paddleWidth / 2, paddleY, 0.0f},                // esquerda baixo
+            {paddleX + paddleWidth / 2, paddleY, 0.0f},                // direita baixo
 
-        // Triângulo 2
-        {paddleX - paddleWidth / 2, paddleY + paddleHeight, 0.0f}, // esquerda cima
-        {paddleX + paddleWidth / 2, paddleY, 0.0f},                // direita baixo
-        {paddleX + paddleWidth / 2, paddleY + paddleHeight, 0.0f}  // direita cima
-    };
+            // Triângulo 2
+            {paddleX - paddleWidth / 2, paddleY + paddleHeight, 0.0f}, // esquerda cima
+            {paddleX + paddleWidth / 2, paddleY, 0.0f},                // direita baixo
+            {paddleX + paddleWidth / 2, paddleY + paddleHeight, 0.0f}  // direita cima
+        };
 
-    deviceContext->UpdateSubresource(vertexBuffer, 0, nullptr, vertices, 0, 0);
+        deviceContext->UpdateSubresource(vertexBuffer, 0, nullptr, vertices, 0, 0);
+    }
 }
 
 void UpdateBall()
@@ -205,7 +215,7 @@ void UpdateBall()
         if (!iFrame)
         {
             iFrame = true;
-            iFrameTimer = 60*5;
+            iFrameTimer = 60 * 5;
             life -= 1;
         }
     }
@@ -607,9 +617,12 @@ void RenderFrame()
     deviceContext->PSSetShader(pixelShader, nullptr, 0);
 
     // Desenhar a barrinha
-    deviceContext->PSSetShader(pixelShaderPaddle, nullptr, 0);
-    deviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
-    deviceContext->Draw(6, 0);
+    if (paddleVisible)
+    {
+        deviceContext->PSSetShader(pixelShaderPaddle, nullptr, 0);
+        deviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+        deviceContext->Draw(6, 0);
+    }
 
     // Desenhar bolinha
     deviceContext->PSSetShader(pixelShaderBall, nullptr, 0);
@@ -669,16 +682,6 @@ void RenderFrame()
             fanVerts.push_back(circleVerts[i + 1]); // próximo ponto
         }
 
-        /*Vertex forceFieldVertices[] =
-            {
-                {forceFieldX - forceFieldRadius, forceFieldY + forceFieldRadius, 0.0f},
-                {forceFieldX - forceFieldRadius, forceFieldY - forceFieldRadius, 0.0f},
-                {forceFieldX + forceFieldRadius, forceFieldY - forceFieldRadius, 0.0f},
-
-                {forceFieldX - forceFieldRadius, forceFieldY + forceFieldRadius, 0.0f},
-                {forceFieldX + forceFieldRadius, forceFieldY - forceFieldRadius, 0.0f},
-                {forceFieldX + forceFieldRadius, forceFieldY + forceFieldRadius, 0.0f},
-            };*/
         deviceContext->UpdateSubresource(forceFieldBuffer, 0, nullptr, fanVerts.data(), 0, 0);
         UINT stride = sizeof(Vertex);
         UINT offset = 0;
@@ -757,10 +760,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 {
     WNDCLASSEX wc = {sizeof(WNDCLASSEX), CS_CLASSDC, WindowProc, 0L, 0L,
                      GetModuleHandle(NULL), NULL, NULL, NULL, NULL,
-                     L"BreakoutDX", NULL};
+                     L"TorrouDX", NULL};
     RegisterClassEx(&wc);
 
-    HWND hWnd = CreateWindow(L"BreakoutDX", L"Breakout com DirectX 11",
+    HWND hWnd = CreateWindow(L"TorrouDX", L"Torrou 1 - Aquele jogo que Touhou minha paciência",
                              WS_OVERLAPPEDWINDOW, 100, 100, 800, 600,
                              NULL, NULL, wc.hInstance, NULL);
 
@@ -811,7 +814,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             // sem direção = shield
                             ActivateforceField();
                         }
-
                     }
                 }
                 xWasPressed = true;
@@ -877,6 +879,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
 
     CleanD3D();
-    UnregisterClass(L"BreakoutDX", wc.hInstance);
+    UnregisterClass(L"TorrouDX", wc.hInstance);
     return 0;
 }

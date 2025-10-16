@@ -35,6 +35,7 @@ ID3D11Buffer *dashShieldBuffer = nullptr;
 
 ID3D11PixelShader *pixelShaderObstacle = nullptr;
 ID3D11PixelShader *pixelShader = nullptr;
+ID3D11PixelShader *pixelShaderBlock = nullptr;
 ID3D11PixelShader *pixelShaderPaddle = nullptr;     // barrinha
 ID3D11PixelShader *pixelShaderBall = nullptr;       // bolinha
 ID3D11PixelShader *pixelShaderProjectile = nullptr; // tirinho
@@ -100,14 +101,15 @@ struct Projectile
 
 std::vector<Projectile> projectiles;
 
-std::vector<Block> blocks;
-
-struct Block{
-    float x,y;
+struct Block
+{
+    float x, y;
     float width, height;
     bool active;
     int hits;
 };
+
+std::vector<Block> blocks;
 
 struct Vertex
 {
@@ -126,6 +128,23 @@ bool CircleRectCollision(float cx, float cy, float radius,
     float dy = cy - closestY;
 
     return (dx * dx + dy * dy) < (radius * radius);
+}
+
+void PlaceBlocks()
+{
+    const float blockWidth = 0.1f;
+    const float blockHeight = 0.1f;
+    const float blockX = -0.6;
+    const float blockY = 0.6;
+
+    Block b;
+    b.x = blockX;
+    b.y = blockY;
+    b.width = blockWidth;
+    b.height = blockHeight;
+    b.active = true;
+    b.hits = 2;
+    blocks.push_back(b);
 }
 
 void DrawLives(HWND hwnd, int life)
@@ -206,6 +225,7 @@ void UpdateBall()
     {
         ballY = -0.72f + ballSize;
         ballVelY *= -0.80f;
+        combo = 0;
     }
 
     // colisão com a barra
@@ -230,6 +250,24 @@ void UpdateBall()
         }
     }
 
+    for (auto &block : blocks)
+    {
+        if (!block.active)
+            continue;
+        bool hitX = ballX + ballSize > block.x - block.width / 2 &&
+                    ballX - ballSize < block.x + block.width / 2;
+        bool hitY = ballY + ballSize > block.y &&
+                    ballY - ballSize < block.y + block.height;
+
+        if (hitX && hitY)
+        {
+            block.hits -= 1;
+            combo++;
+            score += 10 * (combo);
+            break;
+        }
+    }
+
     // atualizar geometria
     Vertex ballVertices[] = {
         {ballX - ballSize, ballY + ballSize, 0.0f},
@@ -247,6 +285,17 @@ void UpdateBall()
     };
 
     deviceContext->UpdateSubresource(ballVertexBuffer, 0, nullptr, ballVertices, 0, 0);
+}
+
+void UpdateBlocks()
+{
+    for (auto &b : blocks)
+    {
+        if (!b.active)
+            continue;
+        if (b.hits <= 0)
+            b.active = false;
+    }
 }
 
 void UpdateProjectiles()
@@ -404,6 +453,10 @@ const char *g_PS_Projectile =
     "struct PS_INPUT { float4 pos : SV_POSITION; }; \
      float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(1.0f,1.0f,1.0f,1.0f); }"; // branco
 
+const char *g_PS_Block =
+    "struct PS_INPUT { float4 pos : SV_POSITION; }; \
+     float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(0.0f,0.0f,0.0f,1.0f); }"; // preto
+
 // Inicializa DirectX
 bool InitD3D(HWND hWnd)
 {
@@ -458,8 +511,19 @@ bool InitD3D(HWND hWnd)
     ID3DBlob *psBlob = nullptr;
     ID3DBlob *psBlobBall = nullptr;
     ID3DBlob *errorBlob = nullptr;
-
+    ID3DBlob *psBlobBlock = nullptr;
     ID3DBlob *psBlobProjectile = nullptr;
+
+    if (FAILED(D3DCompile(g_PS_Block, strlen(g_PS_Block), nullptr, nullptr, nullptr,
+                          "PSMain", "ps_4_0", 0, 0, &psBlobBlock, &errorBlob)))
+    {
+        if (errorBlob)
+        {
+            OutputDebugStringA((char *)errorBlob->GetBufferPointer());
+            errorBlob->Release();
+        }
+        return false;
+    }
 
     if (FAILED(D3DCompile(g_PS_Projectile, strlen(g_PS_Projectile), nullptr, nullptr, nullptr,
                           "PSMain", "ps_4_0", 0, 0, &psBlobProjectile, &errorBlob)))
@@ -534,6 +598,10 @@ bool InitD3D(HWND hWnd)
     if (FAILED(hr))
         return false;
 
+    hr = device->CreatePixelShader(psBlobBlock->GetBufferPointer(), psBlobBlock->GetBufferSize(), nullptr, &pixelShaderBlock);
+    if (FAILED(hr))
+        return false;
+
     // Layout dos vértices
     D3D11_INPUT_ELEMENT_DESC layout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
@@ -545,6 +613,7 @@ bool InitD3D(HWND hWnd)
     vsBlob->Release();
     psBlob->Release();
     psBlobBall->Release();
+    psBlobBlock->Release();
 
     // Vértices de um retângulo (2 triângulos)
     Vertex vertices[] = {
@@ -607,6 +676,18 @@ bool InitD3D(HWND hWnd)
     if (FAILED(hr))
         return false;
 
+    // vertex buffer dos blocos
+    D3D11_BUFFER_DESC bdBlock = {};
+    bdBlock.Usage = D3D11_USAGE_DEFAULT;
+    bdBlock.ByteWidth = sizeof(Vertex) * 6;
+    bdBlock.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+    hr = device->CreateBuffer(&bdBlock, nullptr, &blockVertexBuffer);
+    if (FAILED(hr))
+        return false;
+
+    PlaceBlocks();
+
     return true;
 }
 
@@ -641,7 +722,6 @@ void RenderFrame()
 
     // Desenhar projétil
     deviceContext->PSSetShader(pixelShaderProjectile, nullptr, 0);
-
     for (auto &p : projectiles)
     {
         if (!p.active)
@@ -660,6 +740,27 @@ void RenderFrame()
 
         deviceContext->UpdateSubresource(projectileBuffer, 0, nullptr, projVertices, 0, 0);
         deviceContext->IASetVertexBuffers(0, 1, &projectileBuffer, &stride, &offset);
+        deviceContext->Draw(6, 0);
+    }
+
+    // Desenhar bloco(s)
+    deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0);
+    deviceContext->IASetVertexBuffers(0, 1, &blockVertexBuffer, &stride, &offset);
+
+    for (auto &block : blocks)
+    {
+        if (!block.active)
+            continue;
+
+        Vertex vertices[] = {
+            {block.x - block.width / 2, block.y + block.height, 0.0f},
+            {block.x - block.width / 2, block.y, 0.0f},
+            {block.x + block.width / 2, block.y, 0.0f},
+            {block.x - block.width / 2, block.y + block.height, 0.0f},
+            {block.x + block.width / 2, block.y, 0.0f},
+            {block.x + block.width / 2, block.y + block.height, 0.0f},
+        };
+        deviceContext->UpdateSubresource(blockVertexBuffer, 0, nullptr, vertices, 0, 0);
         deviceContext->Draw(6, 0);
     }
 
@@ -751,6 +852,8 @@ void CleanD3D()
         inputLayout->Release();
     if (rasterState)
         rasterState->Release();
+    if (pixelShaderBlock)
+        pixelShaderBlock->Release();
 }
 
 // Função de janela
@@ -773,7 +876,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                      L"TorrouDX", NULL};
     RegisterClassEx(&wc);
 
-    HWND hWnd = CreateWindow(L"TorrouDX", L"Torrou 1 - Aquele jogo que Touhou minha paciência",
+    HWND hWnd = CreateWindow(L"TorrouDX", L"Torrou 1 - Aquele jogo que Touhou minha paciencia",
                              WS_OVERLAPPEDWINDOW, 100, 100, 800, 600,
                              NULL, NULL, wc.hInstance, NULL);
 
@@ -881,6 +984,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             UpdatePaddle();
             UpdateBall();
             UpdateProjectiles();
+            UpdateBlocks();
             UpdateForceField();
             UpdateDash();
             UpdateIFrame();

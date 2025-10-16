@@ -27,6 +27,7 @@ ID3D11ShaderResourceView *forceFieldTexture = nullptr;
 
 ID3D11Buffer *obstacleBuffer = nullptr;
 ID3D11Buffer *vertexBuffer = nullptr;
+ID3D11Buffer *blockVertexBuffer = nullptr;
 ID3D11Buffer *ballVertexBuffer = nullptr;
 ID3D11Buffer *projectileBuffer = nullptr;
 ID3D11Buffer *forceFieldBuffer = nullptr;
@@ -98,6 +99,15 @@ struct Projectile
 };
 
 std::vector<Projectile> projectiles;
+
+std::vector<Block> blocks;
+
+struct Block{
+    float x,y;
+    float width, height;
+    bool active;
+    int hits;
+};
 
 struct Vertex
 {

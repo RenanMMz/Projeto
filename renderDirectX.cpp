@@ -4,6 +4,8 @@
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <vector>
+#include <DirectXMath.h>
+using namespace DirectX;
 #pragma comment(lib, "D3DCompiler.lib")
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "user32.lib")
@@ -32,6 +34,7 @@ ID3D11Buffer *ballVertexBuffer = nullptr;
 ID3D11Buffer *projectileBuffer = nullptr;
 ID3D11Buffer *forceFieldBuffer = nullptr;
 ID3D11Buffer *dashShieldBuffer = nullptr;
+ID3D11Buffer *blockColorBuffer = nullptr;
 
 ID3D11PixelShader *pixelShaderObstacle = nullptr;
 ID3D11PixelShader *pixelShader = nullptr;
@@ -56,6 +59,9 @@ int highScore = 0; // Ainda não sei se isso vai resetar o valor de HS sempre qu
 int combo = 0;     // multiplicador de score, reseta quando a bolinha cai no chão sem ser rebatida
 bool iFrame = false;
 int iFrameTimer = 0;
+
+bool iFrameBlock = false;
+int iFrameBlockTimer = 0;
 
 // tirinho
 bool projectileActive = false;
@@ -143,7 +149,7 @@ void PlaceBlocks()
     b.width = blockWidth;
     b.height = blockHeight;
     b.active = true;
-    b.hits = 2;
+    b.hits = 3;
     blocks.push_back(b);
 }
 
@@ -261,10 +267,15 @@ void UpdateBall()
 
         if (hitX && hitY)
         {
-            block.hits -= 1;
-            combo++;
-            score += 10 * (combo);
-            break;
+            if (!iFrameBlock)
+            {
+                block.hits -= 1;
+                combo++;
+                score += 10 * (combo);
+                iFrameBlock = true;
+                iFrameBlockTimer = 60 * 2;
+                break;
+            }
         }
     }
 
@@ -295,6 +306,15 @@ void UpdateBlocks()
             continue;
         if (b.hits <= 0)
             b.active = false;
+        if (iFrameBlock)
+        {
+            iFrameBlockTimer -= 1;
+
+            if (iFrameBlockTimer <= 0)
+            {
+                iFrameBlock = false;
+            }
+        }
     }
 }
 
@@ -454,8 +474,9 @@ const char *g_PS_Projectile =
      float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(1.0f,1.0f,1.0f,1.0f); }"; // branco
 
 const char *g_PS_Block =
-    "struct PS_INPUT { float4 pos : SV_POSITION; }; \
-     float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(0.0f,0.0f,0.0f,1.0f); }"; // preto
+    "cbuffer ColorBuffer : register(b0) { float4 blockColor; }; \
+    struct PS_INPUT { float4 pos : SV_POSITION; }; \
+     float4 PSMain(PS_INPUT input) : SV_TARGET { return blockColor; }"; // preto
 
 // Inicializa DirectX
 bool InitD3D(HWND hWnd)
@@ -686,6 +707,16 @@ bool InitD3D(HWND hWnd)
     if (FAILED(hr))
         return false;
 
+    // vertex da cor dos blocos
+    D3D11_BUFFER_DESC bdBlockColor = {};
+    bdBlockColor.Usage = D3D11_USAGE_DEFAULT;
+    bdBlockColor.ByteWidth = sizeof(XMFLOAT4);
+    bdBlockColor.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+
+    hr = device->CreateBuffer(&bdBlockColor, nullptr, &blockColorBuffer);
+    if (FAILED(hr))
+        return false;
+
     PlaceBlocks();
 
     return true;
@@ -751,6 +782,18 @@ void RenderFrame()
     {
         if (!block.active)
             continue;
+
+        XMFLOAT4 color;
+
+        if (block.hits >= 3)
+            color = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
+        else if (block.hits == 2)
+            color = XMFLOAT4(0.2f, 0.2f, 0.2f, 1.0f);
+        else if (block.hits == 1)
+            color = XMFLOAT4(0.4f, 0.4f, 0.4f, 1.0f);
+
+        deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer);
+        deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &color, 0, 0);
 
         Vertex vertices[] = {
             {block.x - block.width / 2, block.y + block.height, 0.0f},
@@ -854,6 +897,18 @@ void CleanD3D()
         rasterState->Release();
     if (pixelShaderBlock)
         pixelShaderBlock->Release();
+    if (blockColorBuffer)
+        blockColorBuffer->Release();
+    if (blockVertexBuffer)
+        blockVertexBuffer->Release();
+    if (ballVertexBuffer)
+        ballVertexBuffer->Release();
+    if (projectileBuffer)
+        projectileBuffer->Release();
+    if (forceFieldBuffer)
+        forceFieldBuffer->Release();
+    if (dashShieldBuffer)
+        dashShieldBuffer->Release();
 }
 
 // Função de janela
@@ -867,7 +922,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
     }
     return DefWindowProc(hWnd, message, wParam, lParam);
 }
-
+ 
 // WinMain
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {

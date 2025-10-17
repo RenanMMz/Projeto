@@ -51,12 +51,12 @@ int stage = 0;        // seletor de stage
 int life = 0;         // vidas, = 0 skill issue
 int timer = 0;        // timer de cada stage, começa em X e vai a 0 onde a variável vira True
 int bossHP = 0;       //
-int tiles = 0;        // blocos restantes, 0 = next
+int tiles = 0;        // blocos restantes, 0 = next.
 int timeCount = 0;    // conta o tempo total
 int menuOption = 0;   // Não sei se será utilizado, mas tecnicamente pode ser utilizado para definir qual opção da lista será selecionada
-int score = 0;
-int highScore = 0; // Ainda não sei se isso vai resetar o valor de HS sempre que reabrir. Devo salvar em um arquivo separado e buscar o valor?
-int combo = 0;     // multiplicador de score, reseta quando a bolinha cai no chão sem ser rebatida
+int score = 0;        //
+int highScore = 0;    // Ainda não sei se isso vai resetar o valor de HS sempre que reabrir. Devo salvar em um arquivo separado e buscar o valor?
+int combo = 0;        // multiplicador de score, reseta quando a bolinha cai no chão sem ser rebatida
 bool iFrame = false;
 int iFrameTimer = 0;
 
@@ -117,6 +117,14 @@ struct Block
 
 std::vector<Block> blocks;
 
+struct Obstacle
+{
+    float x, y, width, height;
+    bool active;
+};
+
+std::vector<Obstacle> obstacles;
+
 struct Vertex
 {
     float x, y, z;
@@ -135,6 +143,22 @@ bool CircleRectCollision(float cx, float cy, float radius,
 
     return (dx * dx + dy * dy) < (radius * radius);
 }
+
+void PlaceObstacles()
+{
+    const float obstacleX = -0.4f;
+    const float obstacleY = 0.0f;
+    const float obstacleWidth = 0.01f;
+    const float obstacleheight = 0.3f;
+
+    Obstacle o;
+    o.height = obstacleheight;
+    o.width = obstacleWidth;
+    o.x = obstacleX;
+    o.y = obstacleY;
+    o.active = true;
+    obstacles.push_back(o);
+};
 
 void PlaceBlocks()
 {
@@ -275,6 +299,49 @@ void UpdateBall()
                 iFrameBlock = true;
                 iFrameBlockTimer = 60 * 2;
                 break;
+            }
+        }
+    }
+
+    for (auto &obstacle : obstacles)
+    {
+        if (!obstacle.active)
+            continue;
+        bool hitX = ballX + ballSize > obstacle.x - obstacle.width / 2 &&
+                    ballX - ballSize < obstacle.x + obstacle.width / 2;
+        bool hitY = ballY + ballSize > obstacle.y &&
+                    ballY - ballSize < obstacle.y + obstacle.height;
+
+        if (hitX && hitY)
+        {
+            // Distância do centro da bola até o centro do obstáculo
+            float dx = ballX - obstacle.x;
+            float dy = ballY - (obstacle.y + obstacle.height / 2);
+
+            // Metade do tamanho da colisão (bounding box)
+            float overlapX = (obstacle.width / 2 + ballSize) - fabs(dx);
+            float overlapY = (obstacle.height / 2 + ballSize) - fabs(dy);
+
+            // Verifica qual sobreposição é menor para definir o eixo do impacto
+            if (overlapX < overlapY)
+            {
+
+                if (dx > 0)
+                    ballX += overlapX; // empurra a bola para a direita
+                else
+                    ballX -= overlapX; // empurra a bola para a esquerda
+
+                ballVelX = -ballVelX; // inverte a direção horizontal
+            }
+            else
+            {
+
+                if (dy > 0)
+                    ballY += overlapY; // empurra para baixo
+                else
+                    ballY -= overlapY; // empurra para cima
+
+                ballVelY = -ballVelY; // inverte a direção vertical
             }
         }
     }
@@ -473,10 +540,14 @@ const char *g_PS_Projectile =
     "struct PS_INPUT { float4 pos : SV_POSITION; }; \
      float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(1.0f,1.0f,1.0f,1.0f); }"; // branco
 
+const char *g_PS_Obstacle =
+    "struct PS_INPUT { float4 pos : SV_POSITION; }; \
+     float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(1.0f,1.0f,0.0f,1.0f); }"; // amarelo
+
 const char *g_PS_Block =
     "cbuffer ColorBuffer : register(b0) { float4 blockColor; }; \
     struct PS_INPUT { float4 pos : SV_POSITION; }; \
-     float4 PSMain(PS_INPUT input) : SV_TARGET { return blockColor; }"; // preto
+     float4 PSMain(PS_INPUT input) : SV_TARGET { return blockColor; }"; // cor definida pela quantidade de hits, que será um valor definido no renderFrame
 
 // Inicializa DirectX
 bool InitD3D(HWND hWnd)
@@ -534,6 +605,7 @@ bool InitD3D(HWND hWnd)
     ID3DBlob *errorBlob = nullptr;
     ID3DBlob *psBlobBlock = nullptr;
     ID3DBlob *psBlobProjectile = nullptr;
+    ID3DBlob *psBlobObstacle = nullptr;
 
     if (FAILED(D3DCompile(g_PS_Block, strlen(g_PS_Block), nullptr, nullptr, nullptr,
                           "PSMain", "ps_4_0", 0, 0, &psBlobBlock, &errorBlob)))
@@ -608,6 +680,17 @@ bool InitD3D(HWND hWnd)
         return false;
     }
 
+    if (FAILED(D3DCompile(g_PS_Obstacle, strlen(g_PS_Obstacle), nullptr, nullptr, nullptr,
+                          "PSMain", "ps_4_0", 0, 0, &psBlobObstacle, &errorBlob)))
+    {
+        if (errorBlob)
+        {
+            OutputDebugStringA((char *)errorBlob->GetBufferPointer());
+            errorBlob->Release();
+        }
+        return false;
+    }
+
     hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &vertexShader);
     if (FAILED(hr))
         return false;
@@ -620,6 +703,10 @@ bool InitD3D(HWND hWnd)
         return false;
 
     hr = device->CreatePixelShader(psBlobBlock->GetBufferPointer(), psBlobBlock->GetBufferSize(), nullptr, &pixelShaderBlock);
+    if (FAILED(hr))
+        return false;
+
+    hr = device->CreatePixelShader(psBlobObstacle->GetBufferPointer(), psBlobObstacle->GetBufferSize(), nullptr, &pixelShaderObstacle);
     if (FAILED(hr))
         return false;
 
@@ -707,7 +794,7 @@ bool InitD3D(HWND hWnd)
     if (FAILED(hr))
         return false;
 
-    // vertex da cor dos blocos
+    // Constant Buffer da cor dos blocos
     D3D11_BUFFER_DESC bdBlockColor = {};
     bdBlockColor.Usage = D3D11_USAGE_DEFAULT;
     bdBlockColor.ByteWidth = sizeof(XMFLOAT4);
@@ -717,6 +804,19 @@ bool InitD3D(HWND hWnd)
     if (FAILED(hr))
         return false;
 
+    // vertex dos obstáculos
+    D3D11_BUFFER_DESC bdObstacle = {};
+    bdObstacle.Usage = D3D11_USAGE_DEFAULT;
+    bdObstacle.ByteWidth = sizeof(Vertex)* 6;
+    bdObstacle.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+    hr = device->CreateBuffer(&bdObstacle, nullptr, &obstacleBuffer);
+    if (FAILED(hr))
+        return false;
+
+    life = 3;
+
+    PlaceObstacles();
     PlaceBlocks();
 
     return true;
@@ -771,6 +871,27 @@ void RenderFrame()
 
         deviceContext->UpdateSubresource(projectileBuffer, 0, nullptr, projVertices, 0, 0);
         deviceContext->IASetVertexBuffers(0, 1, &projectileBuffer, &stride, &offset);
+        deviceContext->Draw(6, 0);
+    }
+
+    // Desenhar obstáculos
+    deviceContext->PSSetShader(pixelShaderObstacle, nullptr, 0);
+    deviceContext->IASetVertexBuffers(0, 1, &obstacleBuffer, &stride, &offset);
+
+    for (auto &obstacle : obstacles)
+    {
+        if (!obstacle.active)
+            continue;
+
+        Vertex vertices[] = {
+            {obstacle.x - obstacle.width / 2, obstacle.y + obstacle.height, 0.0f},
+            {obstacle.x - obstacle.width / 2, obstacle.y, 0.0f},
+            {obstacle.x + obstacle.width / 2, obstacle.y, 0.0f},
+            {obstacle.x - obstacle.width / 2, obstacle.y + obstacle.height, 0.0f},
+            {obstacle.x + obstacle.width / 2, obstacle.y, 0.0f},
+            {obstacle.x + obstacle.width / 2, obstacle.y + obstacle.height, 0.0f},
+        };
+        deviceContext->UpdateSubresource(obstacleBuffer, 0, nullptr, vertices, 0, 0);
         deviceContext->Draw(6, 0);
     }
 
@@ -909,6 +1030,8 @@ void CleanD3D()
         forceFieldBuffer->Release();
     if (dashShieldBuffer)
         dashShieldBuffer->Release();
+    if (obstacleBuffer)
+        obstacleBuffer->Release();
 }
 
 // Função de janela
@@ -922,7 +1045,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
     }
     return DefWindowProc(hWnd, message, wParam, lParam);
 }
- 
+
 // WinMain
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {

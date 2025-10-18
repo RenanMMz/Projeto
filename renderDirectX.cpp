@@ -60,9 +60,6 @@ int combo = 0;        // multiplicador de score, reseta quando a bolinha cai no 
 bool iFrame = false;
 int iFrameTimer = 0;
 
-bool iFrameBlock = false;
-int iFrameBlockTimer = 0;
-
 // tirinho
 bool projectileActive = false;
 float projectileX = 0.0f;
@@ -113,6 +110,8 @@ struct Block
     float width, height;
     bool active;
     int hits;
+    bool iFrameBlock;
+    int iFrameBlockTimer;
 };
 
 std::vector<Block> blocks;
@@ -159,9 +158,7 @@ void PlaceObstacles()
 {
     obstacles.clear();
 
-    AddObstacles(0.0f,-0.4f, 0.7f, 0.01f);
-    
-
+    AddObstacles(0.0f, -0.4f, 0.7f, 0.01f);
 };
 
 void AddBlocks(float x, float y, float width, float height, int hits) // É o "construtor" dos obstáculos, vou chamar múltiplos AddObstacles com valores diferentes para cada stage.
@@ -173,6 +170,8 @@ void AddBlocks(float x, float y, float width, float height, int hits) // É o "c
     b.height = height;
     b.hits = hits;
     b.active = true;
+    b.iFrameBlock = false;
+    b.iFrameBlockTimer = 0;
     blocks.push_back(b);
 }
 
@@ -336,13 +335,13 @@ void UpdateBall()
 
         if (hitX && hitY)
         {
-            if (!iFrameBlock)
+            if (!block.iFrameBlock)
             {
                 block.hits -= 1;
                 combo++;
                 score += 10 * (combo);
-                iFrameBlock = true;
-                iFrameBlockTimer = 60 * 2;
+                block.iFrameBlock = true;
+                block.iFrameBlockTimer = 60 * 2;
                 break;
             }
         }
@@ -418,13 +417,13 @@ void UpdateBlocks()
             continue;
         if (b.hits <= 0)
             b.active = false;
-        if (iFrameBlock)
+        if (b.iFrameBlock)
         {
-            iFrameBlockTimer -= 1;
+            b.iFrameBlockTimer -= 1;
 
-            if (iFrameBlockTimer <= 0)
+            if (b.iFrameBlockTimer <= 0)
             {
-                iFrameBlock = false;
+                b.iFrameBlock = false;
             }
         }
     }

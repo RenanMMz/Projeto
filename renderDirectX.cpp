@@ -146,10 +146,17 @@ bool CircleRectCollision(float cx, float cy, float radius,
 
 void PlaceObstacles()
 {
-    const float obstacleX = -0.4f;
+    const float obstacleX = 0.0f;
     const float obstacleY = 0.0f;
-    const float obstacleWidth = 0.01f;
-    const float obstacleheight = 0.3f;
+    const float obstacleWidth = 0.9f;
+    const float obstacleheight = 0.01f;
+
+    Obstacle o1;
+    o1.height = 0.9f;
+    o1.width = 0.01f;
+    o1.x = 0.0f;
+    o1.y = 0.0f;
+    o1.active = true;
 
     Obstacle o;
     o.height = obstacleheight;
@@ -157,6 +164,8 @@ void PlaceObstacles()
     o.x = obstacleX;
     o.y = obstacleY;
     o.active = true;
+
+    obstacles.push_back(o1);
     obstacles.push_back(o);
 };
 
@@ -486,11 +495,18 @@ void UpdateDash()
 
         if (CircleRectCollision(ballX, ballY, ballSize, rx, ry, rw, rh))
         {
-            // reposiciona a bolinha para fora do dashShield
-            ballY = ry + rh + ballSize + 0.001f;
+            /* // reposiciona a bolinha para fora do dashShield
+            ballY = ry + rh + ballSize + 0.001f;*/
 
             // rebote vertical (sempre para cima, a rasteira serve para levantar a bola)
-            ballVelY = 0.03f;
+            if (fabs(ballVelY * 1.2f) <= 0.03f)
+            {
+                ballVelY = 0.03f;
+            }
+            else
+            {
+                ballVelY = fabs(ballVelY * 1.2f);
+            }
 
             // variação horizontal conforme a direção do dash
             float hitOffset = dashDir * -1.0f;
@@ -807,7 +823,7 @@ bool InitD3D(HWND hWnd)
     // vertex dos obstáculos
     D3D11_BUFFER_DESC bdObstacle = {};
     bdObstacle.Usage = D3D11_USAGE_DEFAULT;
-    bdObstacle.ByteWidth = sizeof(Vertex)* 6;
+    bdObstacle.ByteWidth = sizeof(Vertex) * 6;
     bdObstacle.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 
     hr = device->CreateBuffer(&bdObstacle, nullptr, &obstacleBuffer);

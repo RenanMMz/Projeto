@@ -144,46 +144,82 @@ bool CircleRectCollision(float cx, float cy, float radius,
     return (dx * dx + dy * dy) < (radius * radius);
 }
 
+void AddObstacles(float x, float y, float width, float height) // É o "construtor" dos obstáculos, vou chamar múltiplos AddObstacles com valores diferentes para cada stage.
+{
+    Obstacle o;
+    o.x = x;
+    o.y = y;
+    o.width = width;
+    o.height = height;
+    o.active = true;
+    obstacles.push_back(o);
+}
+
 void PlaceObstacles()
 {
-    const float obstacleX = 0.0f;
-    const float obstacleY = 0.0f;
-    const float obstacleWidth = 0.9f;
-    const float obstacleheight = 0.01f;
+    obstacles.clear();
 
-    Obstacle o1;
-    o1.height = 0.9f;
-    o1.width = 0.01f;
-    o1.x = 0.0f;
-    o1.y = 0.0f;
-    o1.active = true;
+    AddObstacles(0.0f,-0.4f, 0.7f, 0.01f);
+    
 
-    Obstacle o;
-    o.height = obstacleheight;
-    o.width = obstacleWidth;
-    o.x = obstacleX;
-    o.y = obstacleY;
-    o.active = true;
-
-    obstacles.push_back(o1);
-    obstacles.push_back(o);
 };
+
+void AddBlocks(float x, float y, float width, float height, int hits) // É o "construtor" dos obstáculos, vou chamar múltiplos AddObstacles com valores diferentes para cada stage.
+{
+    Block b;
+    b.x = x;
+    b.y = y;
+    b.width = width;
+    b.height = height;
+    b.hits = hits;
+    b.active = true;
+    blocks.push_back(b);
+}
 
 void PlaceBlocks()
 {
-    const float blockWidth = 0.1f;
-    const float blockHeight = 0.1f;
-    const float blockX = -0.6;
-    const float blockY = 0.6;
+    blocks.clear();
+    float width = 0.1f;
+    float height = 0.1f;
 
-    Block b;
-    b.x = blockX;
-    b.y = blockY;
-    b.width = blockWidth;
-    b.height = blockHeight;
-    b.active = true;
-    b.hits = 3;
-    blocks.push_back(b);
+    AddBlocks(-0.85f, 0.8f, width, height, 3);
+    AddBlocks(-0.7f, 0.8f, width, height, 3);
+    AddBlocks(-0.55f, 0.8f, width, height, 3);
+    AddBlocks(-0.4f, 0.8f, width, height, 3);
+    AddBlocks(-0.25f, 0.8f, width, height, 3);
+    AddBlocks(-0.1f, 0.8f, width, height, 3);
+    AddBlocks(0.05f, 0.8f, width, height, 3);
+    AddBlocks(0.2f, 0.8f, width, height, 3);
+    AddBlocks(0.35f, 0.8f, width, height, 3);
+    AddBlocks(0.5f, 0.8f, width, height, 3);
+    AddBlocks(0.65f, 0.8f, width, height, 3);
+    AddBlocks(0.8f, 0.8f, width, height, 3);
+
+    AddBlocks(-0.80f, 0.65f, width, height, 3);
+    AddBlocks(-0.65f, 0.65f, width, height, 3);
+    AddBlocks(-0.50f, 0.65f, width, height, 3);
+    AddBlocks(-0.35f, 0.65f, width, height, 3);
+    AddBlocks(-0.20f, 0.65f, width, height, 3);
+    AddBlocks(-0.05f, 0.65f, width, height, 3);
+    AddBlocks(0.10f, 0.65f, width, height, 3);
+    AddBlocks(0.25f, 0.65f, width, height, 3);
+    AddBlocks(0.40f, 0.65f, width, height, 3);
+    AddBlocks(0.55f, 0.65f, width, height, 3);
+    AddBlocks(0.70f, 0.65f, width, height, 3);
+    AddBlocks(0.85f, 0.65f, width, height, 3);
+
+    AddBlocks(-0.85f, 0.5f, width, height, 3);
+    AddBlocks(-0.7f, 0.5f, width, height, 3);
+    AddBlocks(-0.55f, 0.5f, width, height, 3);
+    AddBlocks(-0.4f, 0.5f, width, height, 3);
+    AddBlocks(-0.25f, 0.5f, width, height, 3);
+    AddBlocks(-0.1f, 0.5f, width, height, 3);
+    AddBlocks(0.05f, 0.5f, width, height, 3);
+    AddBlocks(0.2f, 0.5f, width, height, 3);
+    AddBlocks(0.35f, 0.5f, width, height, 3);
+    AddBlocks(0.5f, 0.5f, width, height, 3);
+    AddBlocks(0.65f, 0.5f, width, height, 3);
+    AddBlocks(0.8f, 0.5f, width, height, 3);
 }
 
 void DrawLives(HWND hwnd, int life)

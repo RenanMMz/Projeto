@@ -4,6 +4,8 @@
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <vector>
+#include <DirectXMath.h>
+using namespace DirectX;
 #pragma comment(lib, "D3DCompiler.lib")
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "user32.lib")
@@ -11,27 +13,52 @@
 
 // Variáveis globais DirectX
 
+HWND g_hWnd = nullptr;
+
 IDXGISwapChain *swapChain = nullptr;
 ID3D11Device *device = nullptr;
 ID3D11DeviceContext *deviceContext = nullptr;
 ID3D11RenderTargetView *renderTargetView = nullptr;
 
-ID3D11Buffer *vertexBuffer = nullptr;
 ID3D11VertexShader *vertexShader = nullptr;
-ID3D11PixelShader *pixelShader = nullptr;
+
 ID3D11InputLayout *inputLayout = nullptr;
 ID3D11RasterizerState *rasterState = nullptr;
-ID3D11Buffer *ballVertexBuffer = nullptr;
 
-ID3D11Buffer *projectileBuffer = nullptr;
-
-ID3D11Buffer *forceFieldBuffer = nullptr;
 ID3D11ShaderResourceView *forceFieldTexture = nullptr;
 
+ID3D11Buffer *obstacleBuffer = nullptr;
+ID3D11Buffer *vertexBuffer = nullptr;
+ID3D11Buffer *blockVertexBuffer = nullptr;
+ID3D11Buffer *ballVertexBuffer = nullptr;
+ID3D11Buffer *projectileBuffer = nullptr;
+ID3D11Buffer *forceFieldBuffer = nullptr;
+ID3D11Buffer *dashShieldBuffer = nullptr;
+ID3D11Buffer *blockColorBuffer = nullptr;
+
+ID3D11PixelShader *pixelShaderObstacle = nullptr;
+ID3D11PixelShader *pixelShader = nullptr;
+ID3D11PixelShader *pixelShaderBlock = nullptr;
 ID3D11PixelShader *pixelShaderPaddle = nullptr;     // barrinha
 ID3D11PixelShader *pixelShaderBall = nullptr;       // bolinha
 ID3D11PixelShader *pixelShaderProjectile = nullptr; // tirinho
-ID3D11Buffer *dashShieldBuffer = nullptr;
+
+// gamestate - Possível que essas variáveis devem ficar salvas em arquivo de "save"?
+int gameState = 0;    // 0 = null, 1 = menu, 2 = rodando, 3 = pause
+int gameMode = 0;     // Dificuldades? Obviamente uma delas terá que se chamar "Lunatic"
+bool timeout = false; // tempo acaba = "desperation"
+int stage = 0;        // seletor de stage
+int life = 0;         // vidas, = 0 skill issue
+int timer = 0;        // timer de cada stage, começa em X e vai a 0 onde a variável vira True
+int bossHP = 0;       //
+int tiles = 0;        // blocos restantes, 0 = next.
+int timeCount = 0;    // conta o tempo total
+int menuOption = 0;   // Não sei se será utilizado, mas tecnicamente pode ser utilizado para definir qual opção da lista será selecionada
+int score = 0;        //
+int highScore = 0;    // Ainda não sei se isso vai resetar o valor de HS sempre que reabrir. Devo salvar em um arquivo separado e buscar o valor?
+int combo = 0;        // multiplicador de score, reseta quando a bolinha cai no chão sem ser rebatida
+bool iFrame = false;
+int iFrameTimer = 0;
 
 // tirinho
 bool projectileActive = false;
@@ -41,23 +68,24 @@ float projectileSize = 0.02f;
 float projectileSpeed = 0.05f;
 
 // barrinha
-float paddleX = 0.0f;            // posição horizontal (em coordenadas Normalized Device Coordinates)
-const float paddleY = -0.75f;    // posição fixa no Y
-const float paddleWidth = 0.10f; // largura (0.5 esquerda + 0.5 direita)
-float paddleHeight = 0.24f;
-float paddleHeightNormal = 0.24f;
-float paddleHeightDash = 0.10f;
+float paddleX = 0.0f;            // posição horizontal (começa no meio)
+const float paddleY = -0.75f;    // posição fixa vertical
+const float paddleWidth = 0.08f; // largura (0.04 esquerda + 0.04 direita)
+float paddleHeight = 0.20f;
+float paddleHeightNormal = 0.20f;
+float paddleHeightDash = 0.08f;
+bool paddleVisible = true;
 
 // bolinha
 float ballX = 0.0f;
 float ballY = -0.5f; // começa acima da barrinha
 float ballSize = 0.03f;
-float ballVelX = 0.01f;
+float ballVelX = 0.008f;
 float ballVelY = 0.01f;
 
 // shield
 bool forceFieldActive = false;
-float forceFieldRadius = 0.25f;
+float forceFieldRadius = 0.20f;
 float forceFieldTimer = 0.00f;
 float forceFieldY = 0.00f;
 float forceFieldX = 0.00f;
@@ -75,6 +103,26 @@ struct Projectile
 };
 
 std::vector<Projectile> projectiles;
+
+struct Block
+{
+    float x, y;
+    float width, height;
+    bool active;
+    int hits;
+    bool iFrameBlock;
+    int iFrameBlockTimer;
+};
+
+std::vector<Block> blocks;
+
+struct Obstacle
+{
+    float x, y, width, height;
+    bool active;
+};
+
+std::vector<Obstacle> obstacles;
 
 struct Vertex
 {
@@ -95,28 +143,136 @@ bool CircleRectCollision(float cx, float cy, float radius,
     return (dx * dx + dy * dy) < (radius * radius);
 }
 
+void AddObstacles(float x, float y, float width, float height) // É o "construtor" dos obstáculos, vou chamar múltiplos AddObstacles com valores diferentes para cada stage.
+{
+    Obstacle o;
+    o.x = x;
+    o.y = y;
+    o.width = width;
+    o.height = height;
+    o.active = true;
+    obstacles.push_back(o);
+}
+
+void PlaceObstacles()
+{
+    obstacles.clear();
+
+    AddObstacles(0.0f, -0.4f, 0.7f, 0.01f);
+};
+
+void AddBlocks(float x, float y, float width, float height, int hits) // É o "construtor" dos obstáculos, vou chamar múltiplos AddObstacles com valores diferentes para cada stage.
+{
+    Block b;
+    b.x = x;
+    b.y = y;
+    b.width = width;
+    b.height = height;
+    b.hits = hits;
+    b.active = true;
+    b.iFrameBlock = false;
+    b.iFrameBlockTimer = 0;
+    blocks.push_back(b);
+}
+
+void PlaceBlocks()
+{
+    blocks.clear();
+    float width = 0.1f;
+    float height = 0.1f;
+
+    AddBlocks(-0.85f, 0.8f, width, height, 3);
+    AddBlocks(-0.7f, 0.8f, width, height, 3);
+    AddBlocks(-0.55f, 0.8f, width, height, 3);
+    AddBlocks(-0.4f, 0.8f, width, height, 3);
+    AddBlocks(-0.25f, 0.8f, width, height, 3);
+    AddBlocks(-0.1f, 0.8f, width, height, 3);
+    AddBlocks(0.05f, 0.8f, width, height, 3);
+    AddBlocks(0.2f, 0.8f, width, height, 3);
+    AddBlocks(0.35f, 0.8f, width, height, 3);
+    AddBlocks(0.5f, 0.8f, width, height, 3);
+    AddBlocks(0.65f, 0.8f, width, height, 3);
+    AddBlocks(0.8f, 0.8f, width, height, 3);
+
+    AddBlocks(-0.80f, 0.65f, width, height, 3);
+    AddBlocks(-0.65f, 0.65f, width, height, 3);
+    AddBlocks(-0.50f, 0.65f, width, height, 3);
+    AddBlocks(-0.35f, 0.65f, width, height, 3);
+    AddBlocks(-0.20f, 0.65f, width, height, 3);
+    AddBlocks(-0.05f, 0.65f, width, height, 3);
+    AddBlocks(0.10f, 0.65f, width, height, 3);
+    AddBlocks(0.25f, 0.65f, width, height, 3);
+    AddBlocks(0.40f, 0.65f, width, height, 3);
+    AddBlocks(0.55f, 0.65f, width, height, 3);
+    AddBlocks(0.70f, 0.65f, width, height, 3);
+    AddBlocks(0.85f, 0.65f, width, height, 3);
+
+    AddBlocks(-0.85f, 0.5f, width, height, 3);
+    AddBlocks(-0.7f, 0.5f, width, height, 3);
+    AddBlocks(-0.55f, 0.5f, width, height, 3);
+    AddBlocks(-0.4f, 0.5f, width, height, 3);
+    AddBlocks(-0.25f, 0.5f, width, height, 3);
+    AddBlocks(-0.1f, 0.5f, width, height, 3);
+    AddBlocks(0.05f, 0.5f, width, height, 3);
+    AddBlocks(0.2f, 0.5f, width, height, 3);
+    AddBlocks(0.35f, 0.5f, width, height, 3);
+    AddBlocks(0.5f, 0.5f, width, height, 3);
+    AddBlocks(0.65f, 0.5f, width, height, 3);
+    AddBlocks(0.8f, 0.5f, width, height, 3);
+}
+
+void DrawLives(HWND hwnd, int life)
+{
+    HDC hdc = GetDC(hwnd);
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(255, 255, 255));
+
+    wchar_t buffer[32];
+    swprintf(buffer, 32, L"Lives: %d", life);
+
+    TextOutW(hdc, 10, 10, buffer, wcslen(buffer));
+    ReleaseDC(hwnd, hdc);
+}
+
+void UpdateIFrame()
+{
+    if (iFrame)
+    {
+        paddleVisible = !paddleVisible;
+        iFrameTimer -= 1;
+        if (iFrameTimer <= 0)
+        {
+            iFrame = false;
+            paddleVisible = true;
+        }
+    }
+}
+
 void UpdatePaddle()
 {
-    Vertex vertices[] = {
-        // Triângulo 1
-        {paddleX - paddleWidth / 2, paddleY + paddleHeight, 0.0f}, // esquerda cima
-        {paddleX - paddleWidth / 2, paddleY, 0.0f},                // esquerda baixo
-        {paddleX + paddleWidth / 2, paddleY, 0.0f},                // direita baixo
+    if (paddleVisible == true)
+    {
+        Vertex vertices[] = {
+            // Triângulo 1
+            {paddleX - paddleWidth / 2, paddleY + paddleHeight, 0.0f}, // esquerda cima
+            {paddleX - paddleWidth / 2, paddleY, 0.0f},                // esquerda baixo
+            {paddleX + paddleWidth / 2, paddleY, 0.0f},                // direita baixo
 
-        // Triângulo 2
-        {paddleX - paddleWidth / 2, paddleY + paddleHeight, 0.0f}, // esquerda cima
-        {paddleX + paddleWidth / 2, paddleY, 0.0f},                // direita baixo
-        {paddleX + paddleWidth / 2, paddleY + paddleHeight, 0.0f}  // direita cima
-    };
+            // Triângulo 2
+            {paddleX - paddleWidth / 2, paddleY + paddleHeight, 0.0f}, // esquerda cima
+            {paddleX + paddleWidth / 2, paddleY, 0.0f},                // direita baixo
+            {paddleX + paddleWidth / 2, paddleY + paddleHeight, 0.0f}  // direita cima
+        };
 
-    deviceContext->UpdateSubresource(vertexBuffer, 0, nullptr, vertices, 0, 0);
+        deviceContext->UpdateSubresource(vertexBuffer, 0, nullptr, vertices, 0, 0);
+    }
 }
 
 void UpdateBall()
 {
     ballX += ballVelX;
     ballY += ballVelY;
-    ballVelY -= 0.0005f;
+    ballVelY -= 0.0007f;
 
     // colisão com paredes
     if (ballX - ballSize < -0.9f) // esquerda
@@ -137,26 +293,101 @@ void UpdateBall()
         ballY = 1.0f - ballSize;
         ballVelY *= -1; // inverte velocidade vertical
     }
+
+    // Bola caiu no chão
     if (ballY - ballSize < -0.72f)
     {
-        // Bola caiu no chão -> rebate com menos força
         ballY = -0.72f + ballSize;
-        ballVelY *= -0.75f;
+        ballVelY *= -0.80f;
+        combo = 0;
     }
 
     // colisão com a barra
 
-    float paddleHitOffset = (ballX - paddleX) / paddleWidth; // Local da barrinha onde
+    float paddleHitOffset = (ballX - paddleX) / paddleWidth; // Local da barrinha
 
     if (ballY - ballSize <= paddleY + paddleHeight &&
         ballX >= paddleX - paddleWidth / 2 &&
         ballX <= paddleX + paddleWidth / 2 &&
-        ballY > paddleY) // para não "colar"
+        ballY > paddleY)
     {
         ballVelY *= -1;
         ballY = paddleY + paddleHeight + ballSize; // corrigir posição
 
-        ballVelX += paddleHitOffset * 0.02f;
+        ballVelX += paddleHitOffset * 0.015f;
+
+        if (!iFrame)
+        {
+            iFrame = true;
+            iFrameTimer = 60 * 5;
+            life -= 1;
+        }
+    }
+
+    for (auto &block : blocks)
+    {
+        if (!block.active)
+            continue;
+        bool hitX = ballX + ballSize > block.x - block.width / 2 &&
+                    ballX - ballSize < block.x + block.width / 2;
+        bool hitY = ballY + ballSize > block.y &&
+                    ballY - ballSize < block.y + block.height;
+
+        if (hitX && hitY)
+        {
+            if (!block.iFrameBlock)
+            {
+                block.hits -= 1;
+                combo++;
+                score += 10 * (combo);
+                block.iFrameBlock = true;
+                block.iFrameBlockTimer = 60 * 2;
+                break;
+            }
+        }
+    }
+
+    for (auto &obstacle : obstacles)
+    {
+        if (!obstacle.active)
+            continue;
+        bool hitX = ballX + ballSize > obstacle.x - obstacle.width / 2 &&
+                    ballX - ballSize < obstacle.x + obstacle.width / 2;
+        bool hitY = ballY + ballSize > obstacle.y &&
+                    ballY - ballSize < obstacle.y + obstacle.height;
+
+        if (hitX && hitY)
+        {
+            // Distância do centro da bola até o centro do obstáculo
+            float dx = ballX - obstacle.x;
+            float dy = ballY - (obstacle.y + obstacle.height / 2);
+
+            // Metade do tamanho da colisão (bounding box)
+            float overlapX = (obstacle.width / 2 + ballSize) - fabs(dx);
+            float overlapY = (obstacle.height / 2 + ballSize) - fabs(dy);
+
+            // Verifica qual sobreposição é menor para definir o eixo do impacto
+            if (overlapX < overlapY)
+            {
+
+                if (dx > 0)
+                    ballX += overlapX; // empurra a bola para a direita
+                else
+                    ballX -= overlapX; // empurra a bola para a esquerda
+
+                ballVelX = -ballVelX; // inverte a direção horizontal
+            }
+            else
+            {
+
+                if (dy > 0)
+                    ballY += overlapY; // empurra para baixo
+                else
+                    ballY -= overlapY; // empurra para cima
+
+                ballVelY = -ballVelY; // inverte a direção vertical
+            }
+        }
     }
 
     // atualizar geometria
@@ -170,12 +401,32 @@ void UpdateBall()
         {ballX + ballSize, ballY + ballSize, 0.0f},
     };
 
-    if (ballVelX > 0.02f)
+    if (ballVelX > 0.03f)
     {
-        ballVelX = 0.02f; // Limita a velocidade horizontal da bolinha para ela não ficar rápida demais, ajustar valor conforme necessário
+        ballVelX = 0.03f; // Limita a velocidade horizontal da bolinha para ela não ficar rápida demais, ajustar valor conforme necessário
     };
 
     deviceContext->UpdateSubresource(ballVertexBuffer, 0, nullptr, ballVertices, 0, 0);
+}
+
+void UpdateBlocks()
+{
+    for (auto &b : blocks)
+    {
+        if (!b.active)
+            continue;
+        if (b.hits <= 0)
+            b.active = false;
+        if (b.iFrameBlock)
+        {
+            b.iFrameBlockTimer -= 1;
+
+            if (b.iFrameBlockTimer <= 0)
+            {
+                b.iFrameBlock = false;
+            }
+        }
+    }
 }
 
 void UpdateProjectiles()
@@ -188,7 +439,7 @@ void UpdateProjectiles()
         p.y += projectileSpeed;
 
         // colisão com a bolinha
-        float hitboxScale = 1.6f;
+        float hitboxScale = 2.0f;
         float expandedSize = ballSize * hitboxScale;
         if (p.x >= ballX - expandedSize &&
             p.x <= ballX + expandedSize &&
@@ -197,9 +448,9 @@ void UpdateProjectiles()
         {
             float hitOffset = (p.x - ballX) / expandedSize; // Local onde a bolinha foi atingida pelo proj
 
-            ballVelX += hitOffset * 0.02f; // impulso horizontal dependendo de onde a bolinha foi atingida, supostamente tiros mais distantes do centro possuem maior impacto horizontal
+            ballVelX += hitOffset * -0.01f; // impulso horizontal dependendo de onde a bolinha foi atingida.
 
-            ballVelY = 0.03f; // impulso vertical ao acertar a bolinha
+            ballVelY = 0.030f; // impulso vertical ao acertar a bolinha
 
             p.active = false;
         }
@@ -238,7 +489,7 @@ void UpdateForceField()
         if (distSq < minDist * minDist) // colisão ocorreu
         {
             float angle = atan2f(dy, dx);
-            if (angle >= 0 && angle <= 3.14159265f) // parte superior do shield
+            if (angle >= -3.14159265f && angle <= 3.14159265f) // ">=" é a parte inferior do círculo, "<=" é a parte superior. Igualar um dos valores a 0 faz o cálculo desconsiderar aquela parte do círculo
             {
                 float dist = sqrtf(distSq);
                 if (dist == 0.0f)
@@ -279,15 +530,22 @@ void UpdateDash()
 
         if (CircleRectCollision(ballX, ballY, ballSize, rx, ry, rw, rh))
         {
-            // reposiciona a bolinha para fora do dashShield
-            ballY = ry + rh + ballSize+0.001f;
+            /* // reposiciona a bolinha para fora do dashShield
+            ballY = ry + rh + ballSize + 0.001f;*/
 
             // rebote vertical (sempre para cima, a rasteira serve para levantar a bola)
-            ballVelY = 0.02f;
+            if (fabs(ballVelY * 1.2f) <= 0.03f)
+            {
+                ballVelY = 0.03f;
+            }
+            else
+            {
+                ballVelY = fabs(ballVelY * 1.2f);
+            }
 
-            // variação horizontal conforme a posição do impacto
-            float hitOffset = (ballX - paddleX) / (shieldWidth / 2.0f);
-            ballVelX += hitOffset * 0.02f;
+            // variação horizontal conforme a direção do dash
+            float hitOffset = dashDir * -1.0f;
+            ballVelX += hitOffset * -0.02f;
         }
 
         paddleHeight = paddleHeightDash;
@@ -306,14 +564,14 @@ void ActivateforceField()
 {
     forceFieldActive = true;
     forceFieldX = paddleX;
-    forceFieldY = paddleY + paddleHeight / 2;
-    forceFieldTimer = 60; // Em frames
+    forceFieldY = paddleY + paddleHeight * 0.7f;
+    forceFieldTimer = 10; // Em frames
 }
 
 void ActivateDash()
 {
     dashActive = true;
-    dashTimer = 30;
+    dashTimer = 15;
 }
 
 const char *g_VS =
@@ -332,6 +590,15 @@ const char *g_PS_Ball =
 const char *g_PS_Projectile =
     "struct PS_INPUT { float4 pos : SV_POSITION; }; \
      float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(1.0f,1.0f,1.0f,1.0f); }"; // branco
+
+const char *g_PS_Obstacle =
+    "struct PS_INPUT { float4 pos : SV_POSITION; }; \
+     float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(1.0f,1.0f,0.0f,1.0f); }"; // amarelo
+
+const char *g_PS_Block =
+    "cbuffer ColorBuffer : register(b0) { float4 blockColor; }; \
+    struct PS_INPUT { float4 pos : SV_POSITION; }; \
+     float4 PSMain(PS_INPUT input) : SV_TARGET { return blockColor; }"; // cor definida pela quantidade de hits, que será um valor definido no renderFrame
 
 // Inicializa DirectX
 bool InitD3D(HWND hWnd)
@@ -387,8 +654,20 @@ bool InitD3D(HWND hWnd)
     ID3DBlob *psBlob = nullptr;
     ID3DBlob *psBlobBall = nullptr;
     ID3DBlob *errorBlob = nullptr;
-
+    ID3DBlob *psBlobBlock = nullptr;
     ID3DBlob *psBlobProjectile = nullptr;
+    ID3DBlob *psBlobObstacle = nullptr;
+
+    if (FAILED(D3DCompile(g_PS_Block, strlen(g_PS_Block), nullptr, nullptr, nullptr,
+                          "PSMain", "ps_4_0", 0, 0, &psBlobBlock, &errorBlob)))
+    {
+        if (errorBlob)
+        {
+            OutputDebugStringA((char *)errorBlob->GetBufferPointer());
+            errorBlob->Release();
+        }
+        return false;
+    }
 
     if (FAILED(D3DCompile(g_PS_Projectile, strlen(g_PS_Projectile), nullptr, nullptr, nullptr,
                           "PSMain", "ps_4_0", 0, 0, &psBlobProjectile, &errorBlob)))
@@ -452,6 +731,17 @@ bool InitD3D(HWND hWnd)
         return false;
     }
 
+    if (FAILED(D3DCompile(g_PS_Obstacle, strlen(g_PS_Obstacle), nullptr, nullptr, nullptr,
+                          "PSMain", "ps_4_0", 0, 0, &psBlobObstacle, &errorBlob)))
+    {
+        if (errorBlob)
+        {
+            OutputDebugStringA((char *)errorBlob->GetBufferPointer());
+            errorBlob->Release();
+        }
+        return false;
+    }
+
     hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &vertexShader);
     if (FAILED(hr))
         return false;
@@ -460,6 +750,14 @@ bool InitD3D(HWND hWnd)
     if (FAILED(hr))
         return false;
     hr = device->CreatePixelShader(psBlobBall->GetBufferPointer(), psBlobBall->GetBufferSize(), nullptr, &pixelShaderBall);
+    if (FAILED(hr))
+        return false;
+
+    hr = device->CreatePixelShader(psBlobBlock->GetBufferPointer(), psBlobBlock->GetBufferSize(), nullptr, &pixelShaderBlock);
+    if (FAILED(hr))
+        return false;
+
+    hr = device->CreatePixelShader(psBlobObstacle->GetBufferPointer(), psBlobObstacle->GetBufferSize(), nullptr, &pixelShaderObstacle);
     if (FAILED(hr))
         return false;
 
@@ -474,6 +772,7 @@ bool InitD3D(HWND hWnd)
     vsBlob->Release();
     psBlob->Release();
     psBlobBall->Release();
+    psBlobBlock->Release();
 
     // Vértices de um retângulo (2 triângulos)
     Vertex vertices[] = {
@@ -536,6 +835,41 @@ bool InitD3D(HWND hWnd)
     if (FAILED(hr))
         return false;
 
+    // vertex buffer dos blocos
+    D3D11_BUFFER_DESC bdBlock = {};
+    bdBlock.Usage = D3D11_USAGE_DEFAULT;
+    bdBlock.ByteWidth = sizeof(Vertex) * 6;
+    bdBlock.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+    hr = device->CreateBuffer(&bdBlock, nullptr, &blockVertexBuffer);
+    if (FAILED(hr))
+        return false;
+
+    // Constant Buffer da cor dos blocos
+    D3D11_BUFFER_DESC bdBlockColor = {};
+    bdBlockColor.Usage = D3D11_USAGE_DEFAULT;
+    bdBlockColor.ByteWidth = sizeof(XMFLOAT4);
+    bdBlockColor.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+
+    hr = device->CreateBuffer(&bdBlockColor, nullptr, &blockColorBuffer);
+    if (FAILED(hr))
+        return false;
+
+    // vertex dos obstáculos
+    D3D11_BUFFER_DESC bdObstacle = {};
+    bdObstacle.Usage = D3D11_USAGE_DEFAULT;
+    bdObstacle.ByteWidth = sizeof(Vertex) * 6;
+    bdObstacle.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+    hr = device->CreateBuffer(&bdObstacle, nullptr, &obstacleBuffer);
+    if (FAILED(hr))
+        return false;
+
+    life = 3;
+
+    PlaceObstacles();
+    PlaceBlocks();
+
     return true;
 }
 
@@ -556,9 +890,12 @@ void RenderFrame()
     deviceContext->PSSetShader(pixelShader, nullptr, 0);
 
     // Desenhar a barrinha
-    deviceContext->PSSetShader(pixelShaderPaddle, nullptr, 0);
-    deviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
-    deviceContext->Draw(6, 0);
+    if (paddleVisible)
+    {
+        deviceContext->PSSetShader(pixelShaderPaddle, nullptr, 0);
+        deviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+        deviceContext->Draw(6, 0);
+    }
 
     // Desenhar bolinha
     deviceContext->PSSetShader(pixelShaderBall, nullptr, 0);
@@ -567,7 +904,6 @@ void RenderFrame()
 
     // Desenhar projétil
     deviceContext->PSSetShader(pixelShaderProjectile, nullptr, 0);
-
     for (auto &p : projectiles)
     {
         if (!p.active)
@@ -589,6 +925,60 @@ void RenderFrame()
         deviceContext->Draw(6, 0);
     }
 
+    // Desenhar obstáculos
+    deviceContext->PSSetShader(pixelShaderObstacle, nullptr, 0);
+    deviceContext->IASetVertexBuffers(0, 1, &obstacleBuffer, &stride, &offset);
+
+    for (auto &obstacle : obstacles)
+    {
+        if (!obstacle.active)
+            continue;
+
+        Vertex vertices[] = {
+            {obstacle.x - obstacle.width / 2, obstacle.y + obstacle.height, 0.0f},
+            {obstacle.x - obstacle.width / 2, obstacle.y, 0.0f},
+            {obstacle.x + obstacle.width / 2, obstacle.y, 0.0f},
+            {obstacle.x - obstacle.width / 2, obstacle.y + obstacle.height, 0.0f},
+            {obstacle.x + obstacle.width / 2, obstacle.y, 0.0f},
+            {obstacle.x + obstacle.width / 2, obstacle.y + obstacle.height, 0.0f},
+        };
+        deviceContext->UpdateSubresource(obstacleBuffer, 0, nullptr, vertices, 0, 0);
+        deviceContext->Draw(6, 0);
+    }
+
+    // Desenhar bloco(s)
+    deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0);
+    deviceContext->IASetVertexBuffers(0, 1, &blockVertexBuffer, &stride, &offset);
+
+    for (auto &block : blocks)
+    {
+        if (!block.active)
+            continue;
+
+        XMFLOAT4 color;
+
+        if (block.hits >= 3)
+            color = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
+        else if (block.hits == 2)
+            color = XMFLOAT4(0.2f, 0.2f, 0.2f, 1.0f);
+        else if (block.hits == 1)
+            color = XMFLOAT4(0.4f, 0.4f, 0.4f, 1.0f);
+
+        deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer);
+        deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &color, 0, 0);
+
+        Vertex vertices[] = {
+            {block.x - block.width / 2, block.y + block.height, 0.0f},
+            {block.x - block.width / 2, block.y, 0.0f},
+            {block.x + block.width / 2, block.y, 0.0f},
+            {block.x - block.width / 2, block.y + block.height, 0.0f},
+            {block.x + block.width / 2, block.y, 0.0f},
+            {block.x + block.width / 2, block.y + block.height, 0.0f},
+        };
+        deviceContext->UpdateSubresource(blockVertexBuffer, 0, nullptr, vertices, 0, 0);
+        deviceContext->Draw(6, 0);
+    }
+
     // desenhar shield
     if (forceFieldActive)
     {
@@ -603,31 +993,21 @@ void RenderFrame()
 
         for (int i = 0; i <= segments; i++)
         {
-            float theta = (3.14159265f * i) / segments; // arco superior (180°)
+            float theta = (2 * 3.14159265f * i) / segments; // Círculo inteiro pois o PI está sendo multiplicado por 2, para um meio-círculo não multiplicar por 2
             float x = forceFieldX + cosf(theta) * forceFieldRadius;
             float y = forceFieldY + sinf(theta) * forceFieldRadius;
             circleVerts.push_back({x, y, 0.0f});
         }
 
-        // Triângulos em forma de leque... ou pelo menos era pra ser
+        // Loop para formar o círculo
         std::vector<Vertex> fanVerts;
-        for (int i = 1; i < circleVerts.size() - 1; i++)
+        for (int i = 1; i < circleVerts.size() - 1; i++) // .size() -1 para o último passo não ficar OOB
         {
             fanVerts.push_back(circleVerts[0]);     // centro
             fanVerts.push_back(circleVerts[i]);     // ponto atual na circunferência
             fanVerts.push_back(circleVerts[i + 1]); // próximo ponto
         }
 
-        /*Vertex forceFieldVertices[] =
-            {
-                {forceFieldX - forceFieldRadius, forceFieldY + forceFieldRadius, 0.0f},
-                {forceFieldX - forceFieldRadius, forceFieldY - forceFieldRadius, 0.0f},
-                {forceFieldX + forceFieldRadius, forceFieldY - forceFieldRadius, 0.0f},
-
-                {forceFieldX - forceFieldRadius, forceFieldY + forceFieldRadius, 0.0f},
-                {forceFieldX + forceFieldRadius, forceFieldY - forceFieldRadius, 0.0f},
-                {forceFieldX + forceFieldRadius, forceFieldY + forceFieldRadius, 0.0f},
-            };*/
         deviceContext->UpdateSubresource(forceFieldBuffer, 0, nullptr, fanVerts.data(), 0, 0);
         UINT stride = sizeof(Vertex);
         UINT offset = 0;
@@ -663,6 +1043,7 @@ void RenderFrame()
     }
 
     swapChain->Present(1, 0);
+    DrawLives(g_hWnd, life);
 }
 
 // Libera DirectX
@@ -686,6 +1067,22 @@ void CleanD3D()
         inputLayout->Release();
     if (rasterState)
         rasterState->Release();
+    if (pixelShaderBlock)
+        pixelShaderBlock->Release();
+    if (blockColorBuffer)
+        blockColorBuffer->Release();
+    if (blockVertexBuffer)
+        blockVertexBuffer->Release();
+    if (ballVertexBuffer)
+        ballVertexBuffer->Release();
+    if (projectileBuffer)
+        projectileBuffer->Release();
+    if (forceFieldBuffer)
+        forceFieldBuffer->Release();
+    if (dashShieldBuffer)
+        dashShieldBuffer->Release();
+    if (obstacleBuffer)
+        obstacleBuffer->Release();
 }
 
 // Função de janela
@@ -705,15 +1102,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 {
     WNDCLASSEX wc = {sizeof(WNDCLASSEX), CS_CLASSDC, WindowProc, 0L, 0L,
                      GetModuleHandle(NULL), NULL, NULL, NULL, NULL,
-                     L"BreakoutDX", NULL};
+                     L"TorrouDX", NULL};
     RegisterClassEx(&wc);
 
-    HWND hWnd = CreateWindow(L"BreakoutDX", L"Breakout com DirectX 11",
+    HWND hWnd = CreateWindow(L"TorrouDX", L"Torrou 1 - Aquele jogo que Touhou minha paciencia",
                              WS_OVERLAPPEDWINDOW, 100, 100, 800, 600,
                              NULL, NULL, wc.hInstance, NULL);
 
     ShowWindow(hWnd, nCmdShow);
 
+    g_hWnd = hWnd;
     // Inicializa DirectX
     if (!InitD3D(hWnd))
         return 0;
@@ -753,7 +1151,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                             // paddleHeight = paddleHeightDash;
                             ActivateDash();
                         }
-                        else
+                        else if (!dashActive)
                         {
                             // sem direção = shield
                             ActivateforceField();
@@ -799,11 +1197,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             {
                 if (GetAsyncKeyState(VK_LEFT) & 0x8000)
                 {
-                    paddleX -= 0.02f; // velocidade para a esquerda
+                    paddleX -= 0.01f; // velocidade para a esquerda
                 }
                 if (GetAsyncKeyState(VK_RIGHT) & 0x8000)
                 {
-                    paddleX += 0.02f; // velocidade para a direita
+                    paddleX += 0.01f; // velocidade para a direita
                 }
             }
             // Limite para não sair da tela
@@ -815,13 +1213,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             UpdatePaddle();
             UpdateBall();
             UpdateProjectiles();
+            UpdateBlocks();
             UpdateForceField();
             UpdateDash();
+            UpdateIFrame();
             RenderFrame();
         }
     }
 
     CleanD3D();
-    UnregisterClass(L"BreakoutDX", wc.hInstance);
+    UnregisterClass(L"TorrouDX", wc.hInstance);
     return 0;
 }

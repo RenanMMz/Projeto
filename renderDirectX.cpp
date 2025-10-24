@@ -129,6 +129,94 @@ struct Vertex
     float x, y, z;
 };
 
+struct SweepResult // Struct auxiliar para cálculo de AABB Swept.
+{
+    float t;      // tempo normalizado de colisão (0 a 1)
+    float nx, ny; // normal, é a direção para o qual a aresta de um objeto está virada
+};
+
+SweepResult SweptAABB( // Retorna um valor entre 0 e 1 que indica quando a colisão ocorreu, valor de 0 indica que ocorreu no começo do movimento, valores PRÓXIMOS de 1 indicam que ocorreu no final do movimento e valor de 1 indica que não ocorreu nenhuma colisão.
+    float bx, float by, float bw, float bh,
+    float vx, float vy,
+    float ox, float oy, float ow, float oh)
+{
+    float xInvEntry, yInvEntry;
+    float xInvExit, yInvExit;
+
+    // distância de entrada e saída
+    if (vx > 0.0f)
+    {
+        xInvEntry = (ox - (bx + bw)) - 0.0f;
+        xInvExit = ((ox + ow) - bx);
+    }
+    else
+    {
+        xInvEntry = ((ox + ow) - bx);
+        xInvExit = (ox - (bx + bw));
+    }
+
+    if (vy > 0.0f)
+    {
+        yInvEntry = (oy - (by + bh));
+        yInvExit = ((oy + oh) - by);
+    }
+    else
+    {
+        yInvEntry = ((oy + oh) - by);
+        yInvExit = (oy - (by + bh));
+    }
+
+    float xEntry, yEntry;
+    float xExit, yExit;
+
+    if (vx == 0.0f)
+    {
+        xEntry = -INFINITY;
+        xExit = INFINITY;
+    }
+    else
+    {
+        xEntry = xInvEntry / vx;
+        xExit = xInvExit / vx;
+    }
+
+    if (vy == 0.0f)
+    {
+        yEntry = -INFINITY;
+        yExit = INFINITY;
+    }
+    else
+    {
+        yEntry = yInvEntry / vy;
+        yExit = yInvExit / vy;
+    }
+
+    float entryTime = max(xEntry, yEntry);
+    float exitTime = min(xExit, yExit);
+
+    SweepResult result;
+    result.t = 1.0f;
+    result.nx = result.ny = 0.0f;
+
+    if (entryTime > exitTime || (xEntry < 0.0f && yEntry < 0.0f) || xEntry > 1.0f || yEntry > 1.0f)
+        return result;
+
+    result.t = entryTime;
+
+    if (xEntry > yEntry)
+    {
+        result.nx = (vx < 0.0f) ? 1.0f : -1.0f;
+        result.ny = 0.0f;
+    }
+    else
+    {
+        result.nx = 0.0f;
+        result.ny = (vy < 0.0f) ? 1.0f : -1.0f;
+    }
+
+    return result;
+}
+
 bool CircleRectCollision(float cx, float cy, float radius,
                          float rx, float ry, float rw, float rh)
 {
@@ -324,6 +412,7 @@ void UpdateBall()
         }
     }
 
+    // Colisão com blocos, não tem efeito na bola
     for (auto &block : blocks)
     {
         if (!block.active)
@@ -347,46 +436,43 @@ void UpdateBall()
         }
     }
 
+    // Colisão com obstáculos com cálculo de AABB
+
+    float dt = 1.0f; // Delta Time
+
+    float nearestT = 1.0f;
+    float normalX = 0.0f, normalY = 0.0f;
+
     for (auto &obstacle : obstacles)
     {
         if (!obstacle.active)
             continue;
-        bool hitX = ballX + ballSize > obstacle.x - obstacle.width / 2 &&
-                    ballX - ballSize < obstacle.x + obstacle.width / 2;
-        bool hitY = ballY + ballSize > obstacle.y &&
-                    ballY - ballSize < obstacle.y + obstacle.height;
 
-        if (hitX && hitY)
+        SweepResult res = SweptAABB(
+            ballX - ballSize, ballY - ballSize, ballSize * 2, ballSize * 2,
+            ballVelX * dt, ballVelY * dt,
+            obstacle.x - obstacle.width / 2, obstacle.y,
+            obstacle.width, obstacle.height);
+
+        if (res.t < nearestT)
         {
-            // Distância do centro da bola até o centro do obstáculo
-            float dx = ballX - obstacle.x;
-            float dy = ballY - (obstacle.y + obstacle.height / 2);
+            nearestT = res.t;
+            normalX = res.nx;
+            normalY = res.ny;
+        }
 
-            // Metade do tamanho da colisão (bounding box)
-            float overlapX = (obstacle.width / 2 + ballSize) - fabs(dx);
-            float overlapY = (obstacle.height / 2 + ballSize) - fabs(dy);
+        // Se houver colisão dentro do próximo passo
+        if (nearestT < 1.0f)
+        {
+            // Move até o ponto exato da colisão
+            ballX += ballVelX * dt * nearestT;
+            ballY += ballVelY * dt * nearestT;
 
-            // Verifica qual sobreposição é menor para definir o eixo do impacto
-            if (overlapX < overlapY)
-            {
-
-                if (dx > 0)
-                    ballX += overlapX; // empurra a bola para a direita
-                else
-                    ballX -= overlapX; // empurra a bola para a esquerda
-
-                ballVelX = -ballVelX; // inverte a direção horizontal
-            }
-            else
-            {
-
-                if (dy > 0)
-                    ballY += overlapY; // empurra para baixo
-                else
-                    ballY -= overlapY; // empurra para cima
-
-                ballVelY = -ballVelY; // inverte a direção vertical
-            }
+            // Reflete a velocidade conforme a normal
+            if (normalX != 0.0f)
+                ballVelX = -ballVelX;
+            if (normalY != 0.0f)
+                ballVelY = -ballVelY;
         }
     }
 

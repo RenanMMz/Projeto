@@ -129,6 +129,16 @@ struct Vertex
     float x, y, z;
 };
 
+struct EnemyBullet
+{
+    float x, y;   // posição
+    float vx, vy; // velocidade
+    float size;   // tamanho
+    bool active;  // desligar os tiros quando saírem da tela, e não esquecer de desligar os tiros também no final de cada stage/boss para não acontecer o clássico bug da Shinki.
+};
+
+std::vector<EnemyBullet> enemyBullets;
+
 struct SweepResult // Struct auxiliar para cálculo de AABB Swept.
 {
     float t;      // tempo normalizado de colisão (0 a 1)
@@ -217,6 +227,7 @@ SweepResult SweptAABB( // Retorna um valor entre 0 e 1 que indica quando a colis
     return result;
 }
 
+// Colisão de círculo com um retângulo para calcular o ângulo do shield
 bool CircleRectCollision(float cx, float cy, float radius,
                          float rx, float ry, float rw, float rh)
 {
@@ -247,6 +258,29 @@ void PlaceObstacles()
     obstacles.clear();
 
     AddObstacles(0.0f, -0.4f, 0.7f, 0.01f);
+};
+
+void SpawnEnemyBullet(float startX, float startY, float targetX, float targetY)
+{
+    EnemyBullet b;
+    b.x = startX;
+    b.y = startY;
+    b.size = 0.01f;
+    b.active = true;
+
+    float dx = targetX - startX;
+    float dy = targetY - startY;
+    float len = sqrt(dx * dx + dy * dy);
+    if (len == 0) len = 0.001f;
+
+    dx /= len;
+    dy /= len;
+
+    float speed = 0.001f;
+    b.vx = dx*speed;
+    b.vy = dy*speed;
+
+    enemyBullets.push_back(b);
 };
 
 void AddBlocks(float x, float y, float width, float height, int hits) // É o "construtor" dos obstáculos, vou chamar múltiplos AddObstacles com valores diferentes para cada stage.
@@ -412,7 +446,7 @@ void UpdateBall()
         }
     }
 
-    // Colisão com blocos, não tem efeito na bola
+    // Colisão com blocos, não tem efeito na bola mas quebra os blocos
     for (auto &block : blocks)
     {
         if (!block.active)

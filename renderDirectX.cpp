@@ -27,6 +27,7 @@ ID3D11RasterizerState *rasterState = nullptr;
 
 ID3D11ShaderResourceView *forceFieldTexture = nullptr;
 
+// buffers
 ID3D11Buffer *obstacleBuffer = nullptr;
 ID3D11Buffer *vertexBuffer = nullptr;
 ID3D11Buffer *blockVertexBuffer = nullptr;
@@ -35,13 +36,16 @@ ID3D11Buffer *projectileBuffer = nullptr;
 ID3D11Buffer *forceFieldBuffer = nullptr;
 ID3D11Buffer *dashShieldBuffer = nullptr;
 ID3D11Buffer *blockColorBuffer = nullptr;
+ID3D11Buffer *enemyBulletBuffer = nullptr;
 
+// pixel shaders
 ID3D11PixelShader *pixelShaderObstacle = nullptr;
 ID3D11PixelShader *pixelShader = nullptr;
 ID3D11PixelShader *pixelShaderBlock = nullptr;
-ID3D11PixelShader *pixelShaderPaddle = nullptr;     // barrinha
-ID3D11PixelShader *pixelShaderBall = nullptr;       // bolinha
-ID3D11PixelShader *pixelShaderProjectile = nullptr; // tirinho
+ID3D11PixelShader *pixelShaderPaddle = nullptr;
+ID3D11PixelShader *pixelShaderBall = nullptr;
+ID3D11PixelShader *pixelShaderProjectile = nullptr;
+ID3D11PixelShader *pixelShaderEnemyBullet = nullptr;
 
 // gamestate - Possível que essas variáveis devem ficar salvas em arquivo de "save"?
 int gameState = 0;    // 0 = null, 1 = menu, 2 = rodando, 3 = pause
@@ -271,14 +275,15 @@ void SpawnEnemyBullet(float startX, float startY, float targetX, float targetY)
     float dx = targetX - startX;
     float dy = targetY - startY;
     float len = sqrt(dx * dx + dy * dy);
-    if (len == 0) len = 0.001f;
+    if (len == 0)
+        len = 0.001f;
 
     dx /= len;
     dy /= len;
 
-    float speed = 0.001f;
-    b.vx = dx*speed;
-    b.vy = dy*speed;
+    float speed = 0.005f;
+    b.vx = dx * speed;
+    b.vy = dy * speed;
 
     enemyBullets.push_back(b);
 };
@@ -465,6 +470,8 @@ void UpdateBall()
                 score += 10 * (combo);
                 block.iFrameBlock = true;
                 block.iFrameBlockTimer = 60 * 2;
+                SpawnEnemyBullet(block.x, block.y, paddleX, paddleY);
+
                 break;
             }
         }
@@ -528,6 +535,38 @@ void UpdateBall()
 
     deviceContext->UpdateSubresource(ballVertexBuffer, 0, nullptr, ballVertices, 0, 0);
 }
+
+void UpdateEnemyBullet()
+{
+    for (auto &bullet : enemyBullets)
+    {
+        if (!bullet.active)
+            continue;
+        bullet.x += bullet.vx;
+        bullet.y += bullet.vy;
+
+        // desativa o tiro se sair da tela
+        if (bullet.x < -1.0f || bullet.x > 1.0f || bullet.y < -1.0f || bullet.y > 1.0f)
+            bullet.active = false;
+
+        if (bullet.y - bullet.size < paddleY + paddleHeight &&
+            bullet.x > paddleX - paddleWidth / 2 &&
+            bullet.x < paddleX + paddleWidth / 2 &&
+            bullet.y > paddleY)
+        {
+            bullet.active = false;
+
+            if (!iFrame)
+            {
+                iFrame = true;
+                iFrameTimer = 60 * 5;
+                life -= 1;
+                combo = 0;
+            }
+            
+        }
+    };
+};
 
 void UpdateBlocks()
 {
@@ -720,6 +759,10 @@ const char *g_PS_Block =
     struct PS_INPUT { float4 pos : SV_POSITION; }; \
      float4 PSMain(PS_INPUT input) : SV_TARGET { return blockColor; }"; // cor definida pela quantidade de hits, que será um valor definido no renderFrame
 
+const char *g_PS_Bullet =
+    "struct PS_INPUT { float4 pos : SV_POSITION; }; \
+     float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(0.900f,0.2500f,0.950f,1.0f); }"; // roxo
+
 // Inicializa DirectX
 bool InitD3D(HWND hWnd)
 {
@@ -777,9 +820,21 @@ bool InitD3D(HWND hWnd)
     ID3DBlob *psBlobBlock = nullptr;
     ID3DBlob *psBlobProjectile = nullptr;
     ID3DBlob *psBlobObstacle = nullptr;
+    ID3DBlob *psBlobBullet = nullptr;
 
     if (FAILED(D3DCompile(g_PS_Block, strlen(g_PS_Block), nullptr, nullptr, nullptr,
                           "PSMain", "ps_4_0", 0, 0, &psBlobBlock, &errorBlob)))
+    {
+        if (errorBlob)
+        {
+            OutputDebugStringA((char *)errorBlob->GetBufferPointer());
+            errorBlob->Release();
+        }
+        return false;
+    }
+
+    if (FAILED(D3DCompile(g_PS_Bullet, strlen(g_PS_Bullet), nullptr, nullptr, nullptr,
+                          "PSMain", "ps_4_0", 0, 0, &psBlobBullet, &errorBlob)))
     {
         if (errorBlob)
         {
@@ -881,6 +936,10 @@ bool InitD3D(HWND hWnd)
     if (FAILED(hr))
         return false;
 
+    hr = device->CreatePixelShader(psBlobBullet->GetBufferPointer(), psBlobBullet->GetBufferSize(), nullptr, &pixelShaderEnemyBullet);
+    if (FAILED(hr))
+        return false;
+
     // Layout dos vértices
     D3D11_INPUT_ELEMENT_DESC layout[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
@@ -893,6 +952,7 @@ bool InitD3D(HWND hWnd)
     psBlob->Release();
     psBlobBall->Release();
     psBlobBlock->Release();
+    psBlobBullet->Release();
 
     // Vértices de um retângulo (2 triângulos)
     Vertex vertices[] = {
@@ -986,6 +1046,16 @@ bool InitD3D(HWND hWnd)
         return false;
 
     life = 3;
+
+    // vertex dos tiros inimigos
+    D3D11_BUFFER_DESC bdBullet = {};
+    bdBullet.Usage = D3D11_USAGE_DEFAULT;
+    bdBullet.ByteWidth = sizeof(Vertex) * 6;
+    bdBullet.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+    hr = device->CreateBuffer(&bdBullet, nullptr, &enemyBulletBuffer);
+    if (FAILED(hr))
+        return false;
 
     PlaceObstacles();
     PlaceBlocks();
@@ -1099,6 +1169,31 @@ void RenderFrame()
         deviceContext->Draw(6, 0);
     }
 
+    // desenhar tiros inimigos
+    deviceContext->PSSetShader(pixelShaderEnemyBullet, nullptr, 0);
+
+    for (auto &bullet : enemyBullets)
+    {
+        if (!bullet.active)
+            continue;
+
+        Vertex verticesBullet[] = {
+            {bullet.x - bullet.size, bullet.y + bullet.size, 0.0f},
+            {bullet.x - bullet.size, bullet.y - bullet.size, 0.0f},
+            {bullet.x + bullet.size, bullet.y - bullet.size, 0.0f},
+
+            {bullet.x - bullet.size, bullet.y + bullet.size, 0.0f},
+            {bullet.x + bullet.size, bullet.y - bullet.size, 0.0f},
+            {bullet.x + bullet.size, bullet.y + bullet.size, 0.0f},
+        };
+        UINT stride = sizeof(Vertex);
+        UINT offset = 0;
+        deviceContext->IASetVertexBuffers(0, 1, &enemyBulletBuffer, &stride, &offset);
+        deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        deviceContext->UpdateSubresource(enemyBulletBuffer, 0, nullptr, verticesBullet, 0, 0);
+        deviceContext->Draw(6, 0);
+    }
+
     // desenhar shield
     if (forceFieldActive)
     {
@@ -1203,6 +1298,8 @@ void CleanD3D()
         dashShieldBuffer->Release();
     if (obstacleBuffer)
         obstacleBuffer->Release();
+    if (enemyBulletBuffer)
+        enemyBulletBuffer->Release();
 }
 
 // Função de janela
@@ -1337,6 +1434,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             UpdateForceField();
             UpdateDash();
             UpdateIFrame();
+            UpdateEnemyBullet();
             RenderFrame();
         }
     }

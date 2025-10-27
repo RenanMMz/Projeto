@@ -46,10 +46,40 @@ ID3D11PixelShader *pixelShaderPaddle = nullptr;
 ID3D11PixelShader *pixelShaderBall = nullptr;
 ID3D11PixelShader *pixelShaderProjectile = nullptr;
 ID3D11PixelShader *pixelShaderEnemyBullet = nullptr;
+ID3D11PixelShader *pixelShaderMenu = nullptr;
+ID3D11PixelShader *pixelShaderButton = nullptr;
 
-// gamestate - Possível que essas variáveis devem ficar salvas em arquivo de "save"?
-int gameState = 0;    // 0 = null, 1 = menu, 2 = rodando, 3 = pause
-int gameMode = 0;     // Dificuldades? Obviamente uma delas terá que se chamar "Lunatic"
+int selectedMenuIndex = 0;
+const char *mainMenuItems[] = {
+    "Start",
+    "Options",
+    "Close"};
+
+const int mainMenuCount = 3;
+
+bool g_wasUpPressed = false;
+bool g_wasDownPressed = false;
+bool g_wasZPressed = false;
+
+enum GameState
+{
+    STATE_START_MENU,
+    STATE_DIFFICULTY_SELECT,
+    STATE_OPTIONS,
+    STATE_GAMEPLAY,
+    STATE_GAMEOVER,
+    STATE_PAUSE
+};
+GameState currentState = STATE_START_MENU; // Inicia no menu inicial
+int difficulty = 0;                        // Dificuldades? Obviamente uma delas terá que se chamar "Lunatic"
+const char *difficulties[] = {
+    "Easy",
+    "Normal",
+    "Hard",
+    "Lunatic"};
+
+const int difficultyCount = 4;
+
 bool timeout = false; // tempo acaba = "desperation"
 int stage = 0;        // seletor de stage
 int life = 0;         // vidas, = 0 skill issue
@@ -100,6 +130,11 @@ int dashTimer = 0;
 float dashDir = 0.0f;     // -1 para esquerda, +1 para direita
 float dashSpeed = 0.025f; // velocidade durante a rasteira, só um pouco mais rápido do que a velocidade normal
 
+struct ColorConstantBuffer
+{
+    DirectX::XMFLOAT4 color; // R, G, B, A
+};
+
 struct Projectile
 {
     float x, y;
@@ -131,6 +166,12 @@ std::vector<Obstacle> obstacles;
 struct Vertex
 {
     float x, y, z;
+};
+
+struct VertexMenu
+{
+    float x, y, z;
+    float r, g, b, a;
 };
 
 struct EnemyBullet
@@ -231,6 +272,58 @@ SweepResult SweptAABB( // Retorna um valor entre 0 e 1 que indica quando a colis
     return result;
 }
 
+void ActivateDash()
+{
+    dashActive = true;
+    dashTimer = 15;
+}
+
+void ActivateforceField()
+{
+    forceFieldActive = true;
+    forceFieldX = paddleX;
+    forceFieldY = paddleY + paddleHeight * 0.7f;
+    forceFieldTimer = 10; // Em frames
+}
+
+void DrawRectButton(float x1, float y1, float x2, float y2, const float color[4])
+{
+    Vertex vertices[] = {
+        {x1, y1, 0.0f},
+        {x1, y2, 0.0f},
+        {x2, y2, 0.0f},
+
+        {x1, y1, 0.0f},
+        {x2, y2, 0.0f},
+        {x2, y1, 0.0f},
+    };
+
+    // Atualiza buffer de vértices
+    deviceContext->UpdateSubresource(vertexBuffer, 0, nullptr, vertices, 0, 0);
+
+    // Atualiza o constant buffer com a cor recebida para o botão, que varia dependendo de seu estado de seleção
+    ColorConstantBuffer cb = {
+        DirectX::XMFLOAT4(color[0], color[1], color[2], color[3])};
+
+    // reutilizando o blockcolorbuffer para isso, já que blocos e menus não aparecerão na mesma tela
+    deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &cb, 0, 0);
+
+    // Setar Input Layout e Vertex Shader
+    deviceContext->IASetInputLayout(inputLayout);
+    deviceContext->VSSetShader(vertexShader, nullptr, 0);
+    deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    // Define cor via constante no pixel shader, se quiser
+    deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0);
+    deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer); // Associa o buffer de cor ao slot 0
+
+    // Desenhar
+    UINT stride = sizeof(Vertex);
+    UINT offset = 0;
+    deviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+    deviceContext->Draw(6, 0);
+}
+
 // Colisão de círculo com um retângulo para calcular o ângulo do shield
 bool CircleRectCollision(float cx, float cy, float radius,
                          float rx, float ry, float rw, float rh)
@@ -244,6 +337,86 @@ bool CircleRectCollision(float cx, float cy, float radius,
     float dy = cy - closestY;
 
     return (dx * dx + dy * dy) < (radius * radius);
+}
+
+void RenderDiffSelect()
+{
+    // Limpa a tela (cor de fundo)
+    float clearColor[4] = {0.05f, 0.05f, 0.1f, 1.0f}; // azul escuro
+    deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
+
+    float startY = 0.5f;  // onde começam os botões
+    float spacing = 0.3f; // espaço vertical entre eles
+    float buttonWidth = 0.8f;
+    float buttonHeight = 0.2f;
+
+    // Cores
+    XMFLOAT4 colorNormal = XMFLOAT4(0.3f, 0.3f, 0.8f, 1.0f);
+    XMFLOAT4 colorSelected = XMFLOAT4(1.0f, 1.0f, 0.3f, 1.0f);
+
+    // Desenha os botões
+    for (int i = 0; i < difficultyCount; i++)
+    {
+        float yCenter = startY - i * spacing; // Posição central vertical
+        XMFLOAT4 color = (selectedMenuIndex == i) ? colorSelected : colorNormal;
+
+        // CORREÇÃO: Passa os cantos (x1, y1 = superior esquerdo; x2, y2 = inferior direito)
+        float x1 = -buttonWidth / 2.0f;
+        float y1 = yCenter + buttonHeight / 2.0f;
+        float x2 = buttonWidth / 2.0f;
+        float y2 = yCenter - buttonHeight / 2.0f;
+
+        DrawRectButton(x1, y1, x2, y2, &color.x); // &color.x passa o float[4] da cor
+    }
+}
+
+void UpdateDiffSelect()
+{
+
+    bool isUpPressed = (GetAsyncKeyState(VK_UP) & 0x8000);
+    bool isDownPressed = (GetAsyncKeyState(VK_DOWN) & 0x8000);
+
+    if (isUpPressed && !g_wasUpPressed)
+        selectedMenuIndex = max(0, selectedMenuIndex - 1);
+    if (isDownPressed && !g_wasDownPressed)
+        selectedMenuIndex = min(difficultyCount - 1, selectedMenuIndex + 1);
+
+    bool isZPressed = (GetAsyncKeyState('Z') & 0x8000);
+
+    bool isXPressed = (GetAsyncKeyState('X') & 0x8000);
+
+    if (isZPressed && !g_wasZPressed)
+    {
+        switch (selectedMenuIndex)
+        {
+        case 0: // Easy
+            difficulty = 0;
+            currentState = GameState::STATE_GAMEPLAY;
+            break;
+        case 1: // Normal
+            difficulty = 1;
+            currentState = GameState::STATE_GAMEPLAY;
+            break;
+        case 2: // Hard
+            difficulty = 2;
+            currentState = GameState::STATE_GAMEPLAY;
+            break;
+        case 3: // Lunatic
+            difficulty = 3;
+            currentState = GameState::STATE_GAMEPLAY;
+            break;
+        }
+    }
+
+    if (isXPressed)
+    {
+        currentState = GameState::STATE_START_MENU; // X volta para o menu inicial
+    }
+
+    // marca que os botões foram apertados para que não repita o clique em todos os frames
+    g_wasUpPressed = isUpPressed;
+    g_wasDownPressed = isDownPressed;
+    g_wasZPressed = isZPressed;
 }
 
 void AddObstacles(float x, float y, float width, float height) // É o "construtor" dos obstáculos, vou chamar múltiplos AddObstacles com valores diferentes para cada stage.
@@ -281,7 +454,7 @@ void SpawnEnemyBullet(float startX, float startY, float targetX, float targetY)
     dx /= len;
     dy /= len;
 
-    float speed = 0.005f;
+    float speed = 0.007f;
     b.vx = dx * speed;
     b.vy = dy * speed;
 
@@ -372,6 +545,72 @@ void UpdateIFrame()
             iFrame = false;
             paddleVisible = true;
         }
+    }
+}
+
+void UpdateMenu()
+{
+
+    bool isUpPressed = (GetAsyncKeyState(VK_UP) & 0x8000);
+    bool isDownPressed = (GetAsyncKeyState(VK_DOWN) & 0x8000);
+
+    if (isUpPressed && !g_wasUpPressed)
+        selectedMenuIndex = max(0, selectedMenuIndex - 1);
+    if (isDownPressed && !g_wasDownPressed)
+        selectedMenuIndex = min(mainMenuCount - 1, selectedMenuIndex + 1);
+
+    bool isZPressed = (GetAsyncKeyState('Z') & 0x8000);
+
+    if (isZPressed && !g_wasZPressed)
+    {
+        switch (selectedMenuIndex)
+        {
+        case 0: // Start
+            currentState = GameState::STATE_DIFFICULTY_SELECT;
+            break;
+        case 1:
+            currentState = GameState::STATE_START_MENU;
+            break;
+        case 2: // Fecha
+            PostQuitMessage(0);
+            break;
+        }
+    }
+
+    // marca que os botões foram apertados para que não repita o clique em todos os frames
+    g_wasUpPressed = isUpPressed;
+    g_wasDownPressed = isDownPressed;
+    g_wasZPressed = isZPressed;
+}
+
+void RenderMenu()
+{
+    // Limpa a tela (cor de fundo)
+    float clearColor[4] = {0.05f, 0.05f, 0.1f, 1.0f}; // azul escuro
+    deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
+
+    float startY = 0.2f;  // onde começam os botões
+    float spacing = 0.3f; // espaço vertical entre eles
+    float buttonWidth = 0.8f;
+    float buttonHeight = 0.2f;
+
+    // Cores
+    XMFLOAT4 colorNormal = XMFLOAT4(0.3f, 0.3f, 0.8f, 1.0f);
+    XMFLOAT4 colorSelected = XMFLOAT4(1.0f, 1.0f, 0.3f, 1.0f);
+
+    // Desenha os botões
+    for (int i = 0; i < mainMenuCount; i++)
+    {
+        float yCenter = startY - i * spacing; // Posição central vertical
+        XMFLOAT4 color = (selectedMenuIndex == i) ? colorSelected : colorNormal;
+
+        // CORREÇÃO: Passa os cantos (x1, y1 = superior esquerdo; x2, y2 = inferior direito)
+        float x1 = -buttonWidth / 2.0f;
+        float y1 = yCenter + buttonHeight / 2.0f;
+        float x2 = buttonWidth / 2.0f;
+        float y2 = yCenter - buttonHeight / 2.0f;
+
+        DrawRectButton(x1, y1, x2, y2, &color.x); // &color.x passa o float[4] da cor
     }
 }
 
@@ -563,7 +802,6 @@ void UpdateEnemyBullet()
                 life -= 1;
                 combo = 0;
             }
-            
         }
     };
 };
@@ -719,20 +957,6 @@ void UpdateDash()
     }
 }
 
-void ActivateforceField()
-{
-    forceFieldActive = true;
-    forceFieldX = paddleX;
-    forceFieldY = paddleY + paddleHeight * 0.7f;
-    forceFieldTimer = 10; // Em frames
-}
-
-void ActivateDash()
-{
-    dashActive = true;
-    dashTimer = 15;
-}
-
 const char *g_VS =
     "struct VS_INPUT { float3 pos : POSITION; }; \
     struct PS_INPUT { float4 pos : SV_POSITION; }; \
@@ -762,6 +986,10 @@ const char *g_PS_Block =
 const char *g_PS_Bullet =
     "struct PS_INPUT { float4 pos : SV_POSITION; }; \
      float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(0.900f,0.2500f,0.950f,1.0f); }"; // roxo
+
+const char *g_PS_Menu =
+    "struct PS_INPUT { float4 pos : SV_POSITION; }; \
+     float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(1.0f,1.0f,1.0f,1.0f); }"; // roxo
 
 // Inicializa DirectX
 bool InitD3D(HWND hWnd)
@@ -821,6 +1049,7 @@ bool InitD3D(HWND hWnd)
     ID3DBlob *psBlobProjectile = nullptr;
     ID3DBlob *psBlobObstacle = nullptr;
     ID3DBlob *psBlobBullet = nullptr;
+    ID3DBlob *psBlobMenu = nullptr;
 
     if (FAILED(D3DCompile(g_PS_Block, strlen(g_PS_Block), nullptr, nullptr, nullptr,
                           "PSMain", "ps_4_0", 0, 0, &psBlobBlock, &errorBlob)))
@@ -917,6 +1146,10 @@ bool InitD3D(HWND hWnd)
         return false;
     }
 
+    hr = device->CreatePixelShader(psBlobBlock->GetBufferPointer(), psBlobBlock->GetBufferSize(), nullptr, &pixelShaderMenu);
+    if (FAILED(hr))
+        return false;
+
     hr = device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &vertexShader);
     if (FAILED(hr))
         return false;
@@ -1009,7 +1242,7 @@ bool InitD3D(HWND hWnd)
     D3D11_BUFFER_DESC bdDashShield = {};
     bdDashShield.Usage = D3D11_USAGE_DEFAULT;
     bdDashShield.ByteWidth = sizeof(Vertex) * _countof(vertices);
-    bdShield.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    bdDashShield.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 
     hr = device->CreateBuffer(&bdDashShield, nullptr, &dashShieldBuffer);
     if (FAILED(hr))
@@ -1063,9 +1296,104 @@ bool InitD3D(HWND hWnd)
     return true;
 }
 
-// Render loop
-void RenderFrame()
+void UpdateGameplay()
 {
+    static bool zWasPressed = false;
+    static bool xWasPressed = false;
+    if (GetAsyncKeyState('X') & 0x8000) // Deve priorizar o dash acima do Shield
+    {
+        if (!xWasPressed)
+        {
+            if (!forceFieldActive) // Shield não deve estar ativo
+            {
+                if (GetAsyncKeyState(VK_LEFT) & 0x8000)
+                {
+                    // dashActive = true;
+                    dashDir = -1.0f; // esquerda
+                    // dashTimer = 20;
+                    // paddleHeight = paddleHeightDash;
+                    ActivateDash();
+                }
+                else if (GetAsyncKeyState(VK_RIGHT) & 0x8000)
+                {
+                    // dashActive = true;
+                    dashDir = 1.0f; // direita
+                    // dashTimer = 20;
+                    // paddleHeight = paddleHeightDash;
+                    ActivateDash();
+                }
+                else if (!dashActive)
+                {
+                    // sem direção = shield
+                    ActivateforceField();
+                }
+            }
+        }
+        xWasPressed = true;
+    }
+    else
+    {
+        xWasPressed = false;
+    }
+    /*if (GetAsyncKeyState('X') & 0x8000) // X para criar o shield
+    {
+        if (!xWasPressed && !forceFieldActive)
+        {
+            ActivateforceField();
+        }
+        xWasPressed = true;
+    }
+    else
+    {
+        xWasPressed = false;
+    }*/
+    if (GetAsyncKeyState('Z') & 0x8000) // Z para atirar
+    {
+
+        if (!zWasPressed)
+        {
+            Projectile p;
+            p.x = paddleX;
+            p.y = paddleY + paddleHeight + 0.003f;
+            p.active = true;
+            projectiles.push_back(p);
+        }
+        zWasPressed = true;
+    }
+    else
+    {
+        zWasPressed = false;
+    }
+    if (!forceFieldActive && !dashActive) // movimentação é bloqueada enquanto o escudo estiver ativo
+    {
+        if (GetAsyncKeyState(VK_LEFT) & 0x8000)
+        {
+            paddleX -= 0.01f; // velocidade para a esquerda
+        }
+        if (GetAsyncKeyState(VK_RIGHT) & 0x8000)
+        {
+            paddleX += 0.01f; // velocidade para a direita
+        }
+    }
+    // Limite para não sair da tela
+    if (paddleX - paddleWidth / 2 < -0.90f)
+        paddleX = -0.90f + paddleWidth / 2;
+    if (paddleX + paddleWidth / 2 > 0.90f)
+        paddleX = 0.90f - paddleWidth / 2;
+
+    UpdatePaddle();
+    UpdateBall();
+    UpdateProjectiles();
+    UpdateBlocks();
+    UpdateForceField();
+    UpdateDash();
+    UpdateIFrame();
+    UpdateEnemyBullet();
+}
+
+void RenderGameplay()
+{
+
     float clearColor[4] = {0.2f, 0.2f, 0.6f, 1.0f}; // cor azulada
     deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
 
@@ -1261,6 +1589,24 @@ void RenderFrame()
     DrawLives(g_hWnd, life);
 }
 
+// Render loop
+void RenderFrame()
+{
+
+    if (currentState == STATE_START_MENU)
+    {
+        RenderMenu();
+    }
+    else if (currentState == STATE_DIFFICULTY_SELECT)
+    {
+        RenderDiffSelect();
+    }
+    else if (currentState == STATE_GAMEPLAY)
+    {
+        RenderGameplay();
+    }
+}
+
 // Libera DirectX
 void CleanD3D()
 {
@@ -1344,98 +1690,31 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         }
         else
         {
-            static bool zWasPressed = false;
-            static bool xWasPressed = false;
-            if (GetAsyncKeyState('X') & 0x8000) // Deve priorizar o dash acima do Shield
+            switch (currentState)
             {
-                if (!xWasPressed)
-                {
-                    if (!forceFieldActive) // Shield não deve estar ativo
-                    {
-                        if (GetAsyncKeyState(VK_LEFT) & 0x8000)
-                        {
-                            // dashActive = true;
-                            dashDir = -1.0f; // esquerda
-                            // dashTimer = 20;
-                            // paddleHeight = paddleHeightDash;
-                            ActivateDash();
-                        }
-                        else if (GetAsyncKeyState(VK_RIGHT) & 0x8000)
-                        {
-                            // dashActive = true;
-                            dashDir = 1.0f; // direita
-                            // dashTimer = 20;
-                            // paddleHeight = paddleHeightDash;
-                            ActivateDash();
-                        }
-                        else if (!dashActive)
-                        {
-                            // sem direção = shield
-                            ActivateforceField();
-                        }
-                    }
-                }
-                xWasPressed = true;
-            }
-            else
-            {
-                xWasPressed = false;
-            }
-            /*if (GetAsyncKeyState('X') & 0x8000) // X para criar o shield
-            {
-                if (!xWasPressed && !forceFieldActive)
-                {
-                    ActivateforceField();
-                }
-                xWasPressed = true;
-            }
-            else
-            {
-                xWasPressed = false;
-            }*/
-            if (GetAsyncKeyState('Z') & 0x8000) // Z para atirar
-            {
+            case GameState::STATE_START_MENU:
+                UpdateMenu();
+                RenderMenu();
+                swapChain->Present(1, 0); // Apresenta a tela
+                break;
 
-                if (!zWasPressed)
-                {
-                    Projectile p;
-                    p.x = paddleX;
-                    p.y = paddleY + paddleHeight + 0.003f;
-                    p.active = true;
-                    projectiles.push_back(p);
-                }
-                zWasPressed = true;
-            }
-            else
-            {
-                zWasPressed = false;
-            }
-            if (!forceFieldActive && !dashActive) // movimentação é bloqueada enquanto o escudo estiver ativo
-            {
-                if (GetAsyncKeyState(VK_LEFT) & 0x8000)
-                {
-                    paddleX -= 0.01f; // velocidade para a esquerda
-                }
-                if (GetAsyncKeyState(VK_RIGHT) & 0x8000)
-                {
-                    paddleX += 0.01f; // velocidade para a direita
-                }
-            }
-            // Limite para não sair da tela
-            if (paddleX - paddleWidth / 2 < -0.90f)
-                paddleX = -0.90f + paddleWidth / 2;
-            if (paddleX + paddleWidth / 2 > 0.90f)
-                paddleX = 0.90f - paddleWidth / 2;
+            case GameState::STATE_DIFFICULTY_SELECT:
+                UpdateDiffSelect();
+                RenderDiffSelect();
+                swapChain->Present(1, 0); // Apresenta a tela
+                break;
 
-            UpdatePaddle();
-            UpdateBall();
-            UpdateProjectiles();
-            UpdateBlocks();
-            UpdateForceField();
-            UpdateDash();
-            UpdateIFrame();
-            UpdateEnemyBullet();
-            RenderFrame();
+            case GameState::STATE_PAUSE:
+                // UpdatePause();
+                // RenderPause();
+                swapChain->Present(1, 0); // Apresenta a tela
+                break;
+
+            case GameState::STATE_GAMEPLAY:
+                UpdateGameplay();
+                RenderFrame();
+                break;
+            }
         }
     }
 

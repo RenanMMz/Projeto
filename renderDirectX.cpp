@@ -360,7 +360,6 @@ void RenderDiffSelect()
         float yCenter = startY - i * spacing; // Posição central vertical
         XMFLOAT4 color = (selectedMenuIndex == i) ? colorSelected : colorNormal;
 
-        // CORREÇÃO: Passa os cantos (x1, y1 = superior esquerdo; x2, y2 = inferior direito)
         float x1 = -buttonWidth / 2.0f;
         float y1 = yCenter + buttonHeight / 2.0f;
         float x2 = buttonWidth / 2.0f;
@@ -369,97 +368,6 @@ void RenderDiffSelect()
         DrawRectButton(x1, y1, x2, y2, &color.x); // &color.x passa o float[4] da cor
     }
 }
-
-void UpdateDiffSelect()
-{
-
-    bool isUpPressed = (GetAsyncKeyState(VK_UP) & 0x8000);
-    bool isDownPressed = (GetAsyncKeyState(VK_DOWN) & 0x8000);
-
-    if (isUpPressed && !g_wasUpPressed)
-        selectedMenuIndex = max(0, selectedMenuIndex - 1);
-    if (isDownPressed && !g_wasDownPressed)
-        selectedMenuIndex = min(difficultyCount - 1, selectedMenuIndex + 1);
-
-    bool isZPressed = (GetAsyncKeyState('Z') & 0x8000);
-
-    bool isXPressed = (GetAsyncKeyState('X') & 0x8000);
-
-    if (isZPressed && !g_wasZPressed)
-    {
-        switch (selectedMenuIndex)
-        {
-        case 0: // Easy
-            difficulty = 0;
-            currentState = GameState::STATE_GAMEPLAY;
-            break;
-        case 1: // Normal
-            difficulty = 1;
-            currentState = GameState::STATE_GAMEPLAY;
-            break;
-        case 2: // Hard
-            difficulty = 2;
-            currentState = GameState::STATE_GAMEPLAY;
-            break;
-        case 3: // Lunatic
-            difficulty = 3;
-            currentState = GameState::STATE_GAMEPLAY;
-            break;
-        }
-    }
-
-    if (isXPressed)
-    {
-        currentState = GameState::STATE_START_MENU; // X volta para o menu inicial
-    }
-
-    // marca que os botões foram apertados para que não repita o clique em todos os frames
-    g_wasUpPressed = isUpPressed;
-    g_wasDownPressed = isDownPressed;
-    g_wasZPressed = isZPressed;
-}
-
-void AddObstacles(float x, float y, float width, float height) // É o "construtor" dos obstáculos, vou chamar múltiplos AddObstacles com valores diferentes para cada stage.
-{
-    Obstacle o;
-    o.x = x;
-    o.y = y;
-    o.width = width;
-    o.height = height;
-    o.active = true;
-    obstacles.push_back(o);
-}
-
-void PlaceObstacles()
-{
-    obstacles.clear();
-
-    AddObstacles(0.0f, -0.3f, 0.7f, 0.01f);
-};
-
-void SpawnEnemyBullet(float startX, float startY, float targetX, float targetY)
-{
-    EnemyBullet b;
-    b.x = startX;
-    b.y = startY;
-    b.size = 0.01f;
-    b.active = true;
-
-    float dx = targetX - startX;
-    float dy = targetY - startY;
-    float len = sqrt(dx * dx + dy * dy);
-    if (len == 0)
-        len = 0.001f;
-
-    dx /= len;
-    dy /= len;
-
-    float speed = 0.007f;
-    b.vx = dx * speed;
-    b.vy = dy * speed;
-
-    enemyBullets.push_back(b);
-};
 
 void AddBlocks(float x, float y, float width, float height, int hits) // É o "construtor" dos obstáculos, vou chamar múltiplos AddObstacles com valores diferentes para cada stage.
 {
@@ -474,6 +382,7 @@ void AddBlocks(float x, float y, float width, float height, int hits) // É o "c
     b.iFrameBlockTimer = 0;
     blocks.push_back(b);
 }
+
 
 void PlaceBlocks()
 {
@@ -520,6 +429,138 @@ void PlaceBlocks()
     AddBlocks(0.65f, 0.5f, width, height, 3);
     AddBlocks(0.8f, 0.5f, width, height, 3);
 }
+
+void AddObstacles(float x, float y, float width, float height) // É o "construtor" dos obstáculos, vou chamar múltiplos AddObstacles com valores diferentes para cada stage.
+{
+    Obstacle o;
+    o.x = x;
+    o.y = y;
+    o.width = width;
+    o.height = height;
+    o.active = true;
+    obstacles.push_back(o);
+}
+
+
+void PlaceObstacles()
+{
+    obstacles.clear();
+
+    AddObstacles(0.0f, -0.3f, 0.7f, 0.01f);
+};
+
+
+void InitGameplay(int selectedDifficulty, int selectedLives)
+{
+    // Variáveis alteráveis com opções, valores recebidos na função
+    life = selectedLives;
+    difficulty = selectedDifficulty;
+
+    // Reset de variáveis player
+    score = 0;
+    paddleX = 0.0f;
+    paddleHeight = paddleHeightNormal;
+    dashActive = false;
+    forceFieldActive = false;
+
+    // Reset de variáveis da bola
+    float ballX = 0.75f;
+    float ballY = -0.5f;
+    float ballSize = 0.03f;
+    float ballVelX = 0.0000000000000000000000000000000000000000001f; // erro de divisão por 0 no cálculo de colisão (possivelmente por causa do AABB) se a velocidade da bola for igual a 0, que faz com que conte colisão com obstáculos em qualquer posição horizontal
+    float ballVelY = 0.08f;
+
+    blocks.clear();
+    PlaceBlocks(); // Alterar esta função para receber o valor do Stage 1 no futuro, tratar troca de stages com o estado de fim de stage
+    obstacles.clear();
+    PlaceObstacles(); // Aqui também, alterar esta função para receber o valor do Stage 1 no futuro.
+    projectiles.clear();
+    enemyBullets.clear();
+}
+
+
+void UpdateDiffSelect()
+{
+
+    bool isUpPressed = (GetAsyncKeyState(VK_UP) & 0x8000);
+    bool isDownPressed = (GetAsyncKeyState(VK_DOWN) & 0x8000);
+
+    if (isUpPressed && !g_wasUpPressed)
+        selectedMenuIndex = max(0, selectedMenuIndex - 1);
+    if (isDownPressed && !g_wasDownPressed)
+        selectedMenuIndex = min(difficultyCount - 1, selectedMenuIndex + 1);
+
+    bool isZPressed = (GetAsyncKeyState('Z') & 0x8000);
+
+    bool isXPressed = (GetAsyncKeyState('X') & 0x8000);
+
+    if (isZPressed && !g_wasZPressed)
+    {
+        switch (selectedMenuIndex)
+        {
+        case 0: // Easy
+            difficulty = 0;
+            stage = 0;
+            InitGameplay(difficulty, life);
+            currentState = GameState::STATE_GAMEPLAY;
+            break;
+        case 1: // Normal
+            difficulty = 1;
+            stage = 0;
+            InitGameplay(difficulty, life);
+            currentState = GameState::STATE_GAMEPLAY;
+            break;
+        case 2: // Hard
+            difficulty = 2;
+            stage = 0;
+            InitGameplay(difficulty, life);
+            currentState = GameState::STATE_GAMEPLAY;
+            break;
+        case 3: // Lunatic
+            difficulty = 3;
+            stage = 0;
+            InitGameplay(difficulty, life);
+            currentState = GameState::STATE_GAMEPLAY;
+            break;
+        }
+    }
+
+    if (isXPressed)
+    {
+        selectedMenuIndex = 0;
+        currentState = GameState::STATE_START_MENU; // X volta para o menu inicial
+    }
+
+    // marca que os botões foram apertados para que não repita o clique em todos os frames
+    g_wasUpPressed = isUpPressed;
+    g_wasDownPressed = isDownPressed;
+    g_wasZPressed = isZPressed;
+}
+
+
+void SpawnEnemyBullet(float startX, float startY, float targetX, float targetY)
+{
+    EnemyBullet b;
+    b.x = startX;
+    b.y = startY;
+    b.size = 0.01f;
+    b.active = true;
+
+    float dx = targetX - startX;
+    float dy = targetY - startY;
+    float len = sqrt(dx * dx + dy * dy);
+    if (len == 0)
+        len = 0.001f;
+
+    dx /= len;
+    dy /= len;
+
+    float speed = 0.007f;
+    b.vx = dx * speed;
+    b.vy = dy * speed;
+
+    enemyBullets.push_back(b);
+};
 
 void DrawLives(HWND hwnd, int life)
 {
@@ -604,7 +645,6 @@ void RenderMenu()
         float yCenter = startY - i * spacing; // Posição central vertical
         XMFLOAT4 color = (selectedMenuIndex == i) ? colorSelected : colorNormal;
 
-        // CORREÇÃO: Passa os cantos (x1, y1 = superior esquerdo; x2, y2 = inferior direito)
         float x1 = -buttonWidth / 2.0f;
         float y1 = yCenter + buttonHeight / 2.0f;
         float x2 = buttonWidth / 2.0f;
@@ -1295,6 +1335,7 @@ bool InitD3D(HWND hWnd)
 
     return true;
 }
+
 
 void UpdateGameplay()
 {

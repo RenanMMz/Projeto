@@ -111,11 +111,11 @@ float paddleHeightDash = 0.08f;
 bool paddleVisible = true;
 
 // bolinha
-float ballX = 0.0f;
-float ballY = -0.5f; // começa acima da barrinha
+float ballX = 0.75f;
+float ballY = -0.5f;
 float ballSize = 0.03f;
-float ballVelX = 0.008f;
-float ballVelY = 0.01f;
+float ballVelX = 0.0000000000000000000000000000000000000000001f; // erro de divisão por 0 no cálculo de colisão (possivelmente por causa do AABB) se a velocidade da bola for igual a 0, que faz com que conte colisão com obstáculos em qualquer posição horizontal
+float ballVelY = 0.08f;
 
 // shield
 bool forceFieldActive = false;
@@ -434,7 +434,7 @@ void PlaceObstacles()
 {
     obstacles.clear();
 
-    AddObstacles(0.0f, -0.4f, 0.7f, 0.01f);
+    AddObstacles(0.0f, -0.3f, 0.7f, 0.01f);
 };
 
 void SpawnEnemyBullet(float startX, float startY, float targetX, float targetY)
@@ -1586,7 +1586,6 @@ void RenderGameplay()
     }
 
     swapChain->Present(1, 0);
-    DrawLives(g_hWnd, life);
 }
 
 // Render loop
@@ -1713,6 +1712,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             case GameState::STATE_GAMEPLAY:
                 UpdateGameplay();
                 RenderFrame();
+                DrawLives(g_hWnd, life);
                 break;
             }
         }

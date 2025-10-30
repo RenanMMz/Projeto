@@ -115,7 +115,7 @@ float ballX = 0.75f;
 float ballY = -0.5f;
 float ballSize = 0.03f;
 float ballVelX = 0.0000000000000000000000000000000000000000001f; // erro de divisão por 0 no cálculo de colisão (possivelmente por causa do AABB) se a velocidade da bola for igual a 0, que faz com que conte colisão com obstáculos em qualquer posição horizontal
-float ballVelY = 0.08f;
+float ballVelY = 0.02f;
 
 // shield
 bool forceFieldActive = false;
@@ -383,51 +383,96 @@ void AddBlocks(float x, float y, float width, float height, int hits) // É o "c
     blocks.push_back(b);
 }
 
-
-void PlaceBlocks()
+void PlaceBlocks(int stageSelected)
 {
     blocks.clear();
     float width = 0.1f;
     float height = 0.1f;
 
-    AddBlocks(-0.85f, 0.8f, width, height, 3);
-    AddBlocks(-0.7f, 0.8f, width, height, 3);
-    AddBlocks(-0.55f, 0.8f, width, height, 3);
-    AddBlocks(-0.4f, 0.8f, width, height, 3);
-    AddBlocks(-0.25f, 0.8f, width, height, 3);
-    AddBlocks(-0.1f, 0.8f, width, height, 3);
-    AddBlocks(0.05f, 0.8f, width, height, 3);
-    AddBlocks(0.2f, 0.8f, width, height, 3);
-    AddBlocks(0.35f, 0.8f, width, height, 3);
-    AddBlocks(0.5f, 0.8f, width, height, 3);
-    AddBlocks(0.65f, 0.8f, width, height, 3);
-    AddBlocks(0.8f, 0.8f, width, height, 3);
+    switch (stageSelected)
+    {
+    case 0:
+        AddBlocks(-0.85f, 0.8f, width, height, 3);
+        AddBlocks(-0.7f, 0.8f, width, height, 3);
+        AddBlocks(-0.55f, 0.8f, width, height, 3);
+        AddBlocks(-0.4f, 0.8f, width, height, 3);
+        AddBlocks(-0.25f, 0.8f, width, height, 3);
+        AddBlocks(-0.1f, 0.8f, width, height, 3);
+        AddBlocks(0.05f, 0.8f, width, height, 3);
+        AddBlocks(0.2f, 0.8f, width, height, 3);
+        AddBlocks(0.35f, 0.8f, width, height, 3);
+        AddBlocks(0.5f, 0.8f, width, height, 3);
+        AddBlocks(0.65f, 0.8f, width, height, 3);
+        AddBlocks(0.8f, 0.8f, width, height, 3);
 
-    AddBlocks(-0.80f, 0.65f, width, height, 3);
-    AddBlocks(-0.65f, 0.65f, width, height, 3);
-    AddBlocks(-0.50f, 0.65f, width, height, 3);
-    AddBlocks(-0.35f, 0.65f, width, height, 3);
-    AddBlocks(-0.20f, 0.65f, width, height, 3);
-    AddBlocks(-0.05f, 0.65f, width, height, 3);
-    AddBlocks(0.10f, 0.65f, width, height, 3);
-    AddBlocks(0.25f, 0.65f, width, height, 3);
-    AddBlocks(0.40f, 0.65f, width, height, 3);
-    AddBlocks(0.55f, 0.65f, width, height, 3);
-    AddBlocks(0.70f, 0.65f, width, height, 3);
-    AddBlocks(0.85f, 0.65f, width, height, 3);
+        AddBlocks(-0.80f, 0.65f, width, height, 3);
+        AddBlocks(-0.65f, 0.65f, width, height, 3);
+        AddBlocks(-0.50f, 0.65f, width, height, 3);
+        AddBlocks(-0.35f, 0.65f, width, height, 3);
+        AddBlocks(-0.20f, 0.65f, width, height, 3);
+        AddBlocks(-0.05f, 0.65f, width, height, 3);
+        AddBlocks(0.10f, 0.65f, width, height, 3);
+        AddBlocks(0.25f, 0.65f, width, height, 3);
+        AddBlocks(0.40f, 0.65f, width, height, 3);
+        AddBlocks(0.55f, 0.65f, width, height, 3);
+        AddBlocks(0.70f, 0.65f, width, height, 3);
+        AddBlocks(0.85f, 0.65f, width, height, 3);
 
-    AddBlocks(-0.85f, 0.5f, width, height, 3);
-    AddBlocks(-0.7f, 0.5f, width, height, 3);
-    AddBlocks(-0.55f, 0.5f, width, height, 3);
-    AddBlocks(-0.4f, 0.5f, width, height, 3);
-    AddBlocks(-0.25f, 0.5f, width, height, 3);
-    AddBlocks(-0.1f, 0.5f, width, height, 3);
-    AddBlocks(0.05f, 0.5f, width, height, 3);
-    AddBlocks(0.2f, 0.5f, width, height, 3);
-    AddBlocks(0.35f, 0.5f, width, height, 3);
-    AddBlocks(0.5f, 0.5f, width, height, 3);
-    AddBlocks(0.65f, 0.5f, width, height, 3);
-    AddBlocks(0.8f, 0.5f, width, height, 3);
+        AddBlocks(-0.85f, 0.5f, width, height, 3);
+        AddBlocks(-0.7f, 0.5f, width, height, 3);
+        AddBlocks(-0.55f, 0.5f, width, height, 3);
+        AddBlocks(-0.4f, 0.5f, width, height, 3);
+        AddBlocks(-0.25f, 0.5f, width, height, 3);
+        AddBlocks(-0.1f, 0.5f, width, height, 3);
+        AddBlocks(0.05f, 0.5f, width, height, 3);
+        AddBlocks(0.2f, 0.5f, width, height, 3);
+        AddBlocks(0.35f, 0.5f, width, height, 3);
+        AddBlocks(0.5f, 0.5f, width, height, 3);
+        AddBlocks(0.65f, 0.5f, width, height, 3);
+        AddBlocks(0.8f, 0.5f, width, height, 3);
+        break;
+
+    case 1:
+        AddBlocks(-0.85f, 0.8f, width, height, 3);
+        AddBlocks(-0.7f, 0.8f, width, height, 3);
+        AddBlocks(-0.55f, 0.8f, width, height, 3);
+        AddBlocks(-0.4f, 0.8f, width, height, 3);
+        AddBlocks(-0.25f, 0.8f, width, height, 3);
+        AddBlocks(-0.1f, 0.8f, width, height, 3);
+        AddBlocks(0.05f, 0.8f, width, height, 3);
+        AddBlocks(0.2f, 0.8f, width, height, 3);
+        AddBlocks(0.35f, 0.8f, width, height, 3);
+        AddBlocks(0.5f, 0.8f, width, height, 3);
+        AddBlocks(0.65f, 0.8f, width, height, 3);
+        AddBlocks(0.8f, 0.8f, width, height, 3);
+
+        AddBlocks(-0.80f, 0.65f, width, height, 3);
+        AddBlocks(-0.65f, 0.65f, width, height, 3);
+        AddBlocks(-0.50f, 0.65f, width, height, 3);
+        AddBlocks(-0.35f, 0.65f, width, height, 3);
+        AddBlocks(-0.20f, 0.65f, width, height, 3);
+        AddBlocks(-0.05f, 0.65f, width, height, 3);
+        AddBlocks(0.10f, 0.65f, width, height, 3);
+        AddBlocks(0.25f, 0.65f, width, height, 3);
+        AddBlocks(0.40f, 0.65f, width, height, 3);
+        AddBlocks(0.55f, 0.65f, width, height, 3);
+        AddBlocks(0.70f, 0.65f, width, height, 3);
+        AddBlocks(0.85f, 0.65f, width, height, 3);
+
+        AddBlocks(-0.85f, 0.5f, width, height, 3);
+        AddBlocks(-0.7f, 0.5f, width, height, 3);
+        AddBlocks(-0.55f, 0.5f, width, height, 3);
+        AddBlocks(-0.4f, 0.5f, width, height, 3);
+        AddBlocks(-0.25f, 0.5f, width, height, 3);
+        AddBlocks(-0.1f, 0.5f, width, height, 3);
+        AddBlocks(0.05f, 0.5f, width, height, 3);
+        AddBlocks(0.2f, 0.5f, width, height, 3);
+        AddBlocks(0.35f, 0.5f, width, height, 3);
+        AddBlocks(0.5f, 0.5f, width, height, 3);
+        AddBlocks(0.65f, 0.5f, width, height, 3);
+        AddBlocks(0.8f, 0.5f, width, height, 3);
+        break;
+    }
 }
 
 void AddObstacles(float x, float y, float width, float height) // É o "construtor" dos obstáculos, vou chamar múltiplos AddObstacles com valores diferentes para cada stage.
@@ -441,22 +486,31 @@ void AddObstacles(float x, float y, float width, float height) // É o "construt
     obstacles.push_back(o);
 }
 
-
-void PlaceObstacles()
+void PlaceObstacles(int stageSelected)
 {
     obstacles.clear();
 
-    AddObstacles(0.0f, -0.3f, 0.7f, 0.01f);
-};
 
+    switch (stageSelected){
+        case 0:
+        AddObstacles(0.0f, -0.3f, 0.7f, 0.01f);
+    }
+    
+};
 
 void InitGameplay(int selectedDifficulty, int selectedLives)
 {
     // Variáveis alteráveis com opções, valores recebidos na função
     life = selectedLives;
     difficulty = selectedDifficulty;
+    stage = 0;
 
     // Reset de variáveis player
+    iFrame = false;
+    iFrameTimer = 0;
+    dashActive = false;
+    forceFieldActive = false;
+    combo = 0;
     score = 0;
     paddleX = 0.0f;
     paddleHeight = paddleHeightNormal;
@@ -468,16 +522,15 @@ void InitGameplay(int selectedDifficulty, int selectedLives)
     float ballY = -0.5f;
     float ballSize = 0.03f;
     float ballVelX = 0.0000000000000000000000000000000000000000001f; // erro de divisão por 0 no cálculo de colisão (possivelmente por causa do AABB) se a velocidade da bola for igual a 0, que faz com que conte colisão com obstáculos em qualquer posição horizontal
-    float ballVelY = 0.08f;
+    float ballVelY = 0.02f;
 
     blocks.clear();
-    PlaceBlocks(); // Alterar esta função para receber o valor do Stage 1 no futuro, tratar troca de stages com o estado de fim de stage
+    PlaceBlocks(stage); // Alterar esta função para receber o valor do Stage 1 no futuro, tratar troca de stages com o estado de fim de stage
     obstacles.clear();
-    PlaceObstacles(); // Aqui também, alterar esta função para receber o valor do Stage 1 no futuro.
+    PlaceObstacles(stage); // Aqui também, alterar esta função para receber o valor do Stage 1 no futuro.
     projectiles.clear();
     enemyBullets.clear();
 }
-
 
 void UpdateDiffSelect()
 {
@@ -536,7 +589,6 @@ void UpdateDiffSelect()
     g_wasDownPressed = isDownPressed;
     g_wasZPressed = isZPressed;
 }
-
 
 void SpawnEnemyBullet(float startX, float startY, float targetX, float targetY)
 {
@@ -607,6 +659,7 @@ void UpdateMenu()
         switch (selectedMenuIndex)
         {
         case 0: // Start
+            selectedMenuIndex = 1;
             currentState = GameState::STATE_DIFFICULTY_SELECT;
             break;
         case 1:
@@ -1329,13 +1382,8 @@ bool InitD3D(HWND hWnd)
     hr = device->CreateBuffer(&bdBullet, nullptr, &enemyBulletBuffer);
     if (FAILED(hr))
         return false;
-
-    PlaceObstacles();
-    PlaceBlocks();
-
     return true;
 }
-
 
 void UpdateGameplay()
 {

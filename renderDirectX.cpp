@@ -84,6 +84,7 @@ bool timeout = false;         // tempo acaba = "desperation"
 int stage = 0;                // seletor de stage
 int stageTransitionTimer = 0; // variável que fará a contagem do load
 int life = 0;                 // vidas, = 0 skill issue
+int cfgLife = 3;
 int timer = 0;                // timer de cada stage, começa em X e vai a 0 onde a variável vira True
 int bossHP = 0;               //
 int blocksRemaining = 0;      // blocos restantes, 0 = next.
@@ -574,25 +575,25 @@ void UpdateDiffSelect()
         case 0: // Easy
             difficulty = 0;
             stage = 0;
-            InitGameplay(difficulty, life);
+            InitGameplay(difficulty, cfgLife);
             currentState = GameState::STATE_GAMEPLAY;
             break;
         case 1: // Normal
             difficulty = 1;
             stage = 0;
-            InitGameplay(difficulty, life);
+            InitGameplay(difficulty, cfgLife);
             currentState = GameState::STATE_GAMEPLAY;
             break;
         case 2: // Hard
             difficulty = 2;
             stage = 0;
-            InitGameplay(difficulty, life);
+            InitGameplay(difficulty, cfgLife);
             currentState = GameState::STATE_GAMEPLAY;
             break;
         case 3: // Lunatic
             difficulty = 3;
             stage = 0;
-            InitGameplay(difficulty, life);
+            InitGameplay(difficulty, cfgLife);
             currentState = GameState::STATE_GAMEPLAY;
             break;
         }
@@ -867,6 +868,23 @@ void UpdateBall()
             }
         }
     }
+
+    for (auto &enemyBullet : enemyBullets)
+    {
+        if (!enemyBullet.active)
+            continue;
+        bool hitX = ballX + ballSize > enemyBullet.x - enemyBullet.size / 2 &&
+                    ballX - ballSize < enemyBullet.x + enemyBullet.size / 2;
+        bool hitY = ballY + ballSize > enemyBullet.y &&
+                    ballY - ballSize < enemyBullet.y + enemyBullet.size;
+
+        if (hitX && hitY)
+        {
+            enemyBullet.active = false;
+            break;
+        }
+    }
+
 
     // Colisão com obstáculos com cálculo de AABB
 

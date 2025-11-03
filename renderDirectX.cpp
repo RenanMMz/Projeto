@@ -1474,6 +1474,14 @@ void UpdateGameplay()
         return;
     }
 
+    if (life < 0)
+    {
+        selectedMenuIndex = 0;
+        currentState = GameState::STATE_START_MENU;
+        return;
+    }
+
+
     if (blocksRemaining <= 0)
     {
         blocksRemaining = 0;
@@ -1486,7 +1494,9 @@ void UpdateGameplay()
         }
         else if (stage >= 1)
         {
+            selectedMenuIndex = 0;
             currentState = GameState::STATE_START_MENU;
+            return;
         }
     }
 

@@ -532,6 +532,7 @@ void InitGameplay(int selectedDifficulty, int selectedLives)
     // Reset de variáveis player
     iFrame = false;
     iFrameTimer = 0;
+    paddleVisible = true;
     dashActive = false;
     forceFieldActive = false;
     combo = 0;

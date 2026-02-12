@@ -15,7 +15,7 @@ Iniciei este projeto para aprender sobre renderização em directx. A ideia come
 
 - Separar a física do FPS 
 - Criador de stages visual
-- Adicionar HUD e um identificador gráfico da área "jogaável"
+- Adicionar HUD e um identificador gráfico da área "jogável"
 - Adicionar um Menu com Iniciar / Opções / Fechar / etc
 - Implementar o conceito de Stages / Bosses
 - Adicionar gráficos e sons

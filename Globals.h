@@ -73,6 +73,8 @@ extern ID3D11PixelShader* pixelShaderEnemyBullet;
 extern ID3D11PixelShader* pixelShaderMenu;
 
 // Menu e Estado do Jogo
+extern double g_targetFPS;
+extern double g_maxFrameTime;
 extern GameState currentState;
 extern int selectedMenuIndex;
 extern const char* mainMenuItems[];

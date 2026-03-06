@@ -19,26 +19,46 @@ using namespace DirectX;
 // ==========================================
 // ENUMS E STRUCTS
 // ==========================================
-enum GameState { STATE_START_MENU, STATE_DIFFICULTY_SELECT, STATE_OPTIONS, STATE_GAMEPLAY, STATE_GAMEOVER, STATE_PAUSE };
-
-struct ColorConstantBuffer { DirectX::XMFLOAT4 color; };
-struct Projectile { float x, y; bool active; };
-struct Block {
-    float x, y, width, height;
-    bool active;
-    int hits;
-    int bulletPattern;
-    int bulletCount;
-    bool iFrameBlock;
-    int iFrameBlockTimer;
+enum GameState {
+	STATE_START_MENU, 
+	STATE_DIFFICULTY_SELECT, 
+	STATE_OPTIONS, 
+	STATE_GAMEPLAY, 
+	STATE_GAMEOVER, 
+	STATE_PAUSE,
+	STATE_EDITOR
 };
-struct Obstacle { float x, y, width, height; bool active; };
-struct Vertex { float x, y, z; };
-struct VertexMenu { float x, y, z; float r, g, b, a; };
-struct EnemyBullet { float x, y, vx, vy, size; bool active; };
+
+struct ColorConstantBuffer {
+	DirectX::XMFLOAT4 color;
+};
+struct Projectile {
+	float x, y; bool active;
+};
+struct Block {
+	float x, y, width, height;
+	bool active;
+	int hits;
+	int bulletPattern;
+	int bulletCount;
+	bool iFrameBlock;
+	int iFrameBlockTimer;
+};
+struct Obstacle {
+	float x, y, width, height; bool active;
+};
+struct Vertex {
+	float x, y, z;
+};
+struct VertexMenu {
+	float x, y, z; float r, g, b, a;
+};
+struct EnemyBullet {
+	float x, y, vx, vy, size; bool active;
+};
 
 // ==========================================
-// DECLARA«√O DAS VARI¡VEIS GLOBAIS (extern)
+// DECLARA√á√ÉO DAS VARI√ÅVEIS GLOBAIS (extern)
 // ==========================================
 
 // DirectX
@@ -86,7 +106,7 @@ extern bool g_wasDownPressed;
 extern bool g_wasZPressed;
 extern bool modoEditor;
 
-// Gameplay Vari·veis
+// Gameplay Vari√°veis
 extern int balasPorBloco;
 extern int bulletPattern;
 extern bool timeout;
@@ -104,7 +124,7 @@ extern int combo;
 extern bool iFrame;
 extern int iFrameTimer;
 
-// ProjÈteis
+// Proj√©teis
 extern bool projectileActive;
 extern float projectileX;
 extern float projectileY;

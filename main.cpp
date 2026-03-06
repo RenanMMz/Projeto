@@ -63,8 +63,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 					UpdateGameplay(); RenderGameplay();
 					DrawScore(g_hWnd, score); DrawBlocksRemaining(g_hWnd, blocksRemaining); DrawLives(g_hWnd, life); DrawStage(g_hWnd, stage);
 					break;
+				case GameState::STATE_EDITOR:
+					UpdateEditor(); RenderEditor();
+					break;
 				}
-				RenderImGuiDebugWindow(); swapChain->Present(0, 0); //swapchain em 0 = vsync desligado, em 1 = vsync ligado. A ideia é desligar o vsync e limitar o FPS manualmente em 60 para que a física seja constante em qualquer dispositivo e também para potencialmente reduzir o input delay gerado pelo vsync.
+				if (currentState == GameState::STATE_EDITOR) {
+					RenderEditorUI();
+				}
+				else {
+					RenderDebugUI();
+				}
+				swapChain->Present(0, 0); //swapchain em 0 = vsync desligado, em 1 = vsync ligado. A ideia é desligar o vsync e limitar o FPS manualmente em 60 para que a física seja constante em qualquer dispositivo e também para potencialmente reduzir o input delay gerado pelo vsync.
 
 			}
 			else {

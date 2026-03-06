@@ -1,5 +1,10 @@
 #include "Render.h"
 #include <stdio.h>
+#include "Editor.h"
+#include "Level.h"
+#include "./imgui/imgui.h"
+#include "./imgui/imgui_impl_win32.h"
+#include "./imgui/imgui_impl_dx11.h"
 
 // Shaders como strings mantidos unicamente no render
 const char* g_VS = "struct VS_INPUT { float3 pos : POSITION; }; struct PS_INPUT { float4 pos : SV_POSITION; }; PS_INPUT VSMain(VS_INPUT input) { PS_INPUT output; output.pos = float4(input.pos,1.0f); return output; }";
@@ -79,14 +84,17 @@ void DrawLives(HWND hwnd, int life) {
     HDC hdc = GetDC(hwnd); SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, RGB(255, 255, 255));
     wchar_t buffer[32]; swprintf(buffer, 32, L"Lives: %d", life); TextOutW(hdc, 10, 10, buffer, (int)wcslen(buffer)); ReleaseDC(hwnd, hdc);
 }
+
 void DrawStage(HWND hwnd, int stage) {
     HDC hdc = GetDC(hwnd); SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, RGB(255, 255, 255));
     wchar_t buffer[32]; swprintf(buffer, 32, L"Stage: %d", stage + 1); TextOutW(hdc, 400, 10, buffer, (int)wcslen(buffer)); ReleaseDC(hwnd, hdc);
 }
+
 void DrawScore(HWND hwnd, int score) {
     HDC hdc = GetDC(hwnd); SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, RGB(255, 255, 255));
     wchar_t buffer[32]; swprintf(buffer, 32, L"Score: %d", score * 10); TextOutW(hdc, 10, 30, buffer, (int)wcslen(buffer)); ReleaseDC(hwnd, hdc);
 }
+
 void DrawBlocksRemaining(HWND hwnd, int blocksRemaining) {
     HDC hdc = GetDC(hwnd); SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, RGB(255, 255, 255));
     wchar_t buffer[32]; swprintf(buffer, 32, L"Blocks Remaining: %d", blocksRemaining); TextOutW(hdc, 200, 10, buffer, (int)wcslen(buffer)); ReleaseDC(hwnd, hdc);
@@ -169,4 +177,93 @@ void CleanD3D() {
     if (rasterState) rasterState->Release(); if (pixelShaderBlock) pixelShaderBlock->Release(); if (blockColorBuffer) blockColorBuffer->Release();
     if (blockVertexBuffer) blockVertexBuffer->Release(); if (ballVertexBuffer) ballVertexBuffer->Release(); if (projectileBuffer) projectileBuffer->Release();
     if (forceFieldBuffer) forceFieldBuffer->Release(); if (dashShieldBuffer) dashShieldBuffer->Release(); if (obstacleBuffer) obstacleBuffer->Release(); if (enemyBulletBuffer) enemyBulletBuffer->Release();
+}
+
+void RenderEditorUI() {
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+
+    ImGui::Begin("Game Engine - TorrouDX");
+    ImGui::Text("MODO EDITOR");
+
+    bool check = (currentState == STATE_EDITOR);
+
+    if (ImGui::Checkbox("Habilitar Modo de Edicao", &check))
+    {
+        if (check) {
+            currentState = STATE_EDITOR;
+        }
+        else {
+            currentState = STATE_START_MENU;
+        }
+    }
+
+    if (check)
+    {
+        static int ferramentaAtual = 0;
+        ImGui::RadioButton("Colocar Blocos (Inimigos)", &ferramentaAtual, 0); ImGui::SameLine();
+        ImGui::RadioButton("Colocar Paredes", &ferramentaAtual, 1);
+
+        static int editorHits = 1; static float obsW = 0.3f; static float obsH = 0.02f;
+        static int editorBulletCount = 3;
+        static int editorBulletPattern = 0;
+
+        if (ferramentaAtual == 0) {
+            ImGui::SliderInt("Vida do Bloco (1=Cinz, 3=Prt)", &editorHits, 1, 3);
+            ImGui::SliderInt("Qtd de Tiros", &editorBulletCount, 0, 40);
+            const char* patternNames[] = { "0: Disperso (Cone)", "1: Focado (Linha)", "2: Circular (Ring)", "3: Espiral (Swirl)" };
+            ImGui::Combo("Padrao de Tiro", &editorBulletPattern, patternNames, 4);
+        }
+        else {
+            ImGui::SliderFloat("Largura Parede", &obsW, 0.05f, 1.0f); ImGui::SliderFloat("Altura Parede", &obsH, 0.01f, 0.5f);
+        }
+
+        static int editorStage = 0; ImGui::InputInt("ID da Fase (Salvar)", &editorStage); if (editorStage < 0) editorStage = 0;
+        char filename[64]; snprintf(filename, sizeof(filename), "stage%d.txt", editorStage);
+
+        if (ImGui::Button("Salvar Fase")) {
+            SaveLevel(filename);
+        } ImGui::SameLine();
+        if (ImGui::Button("Carregar Fase")) {
+            std::ifstream file(filename); if (file.is_open()) {
+                file.close(); LoadLevel(filename);
+            }
+            else {
+                ClearLevel();
+            }
+        }
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+        if (ImGui::Button("Deletar Tudo da Tela")) {
+            ClearLevel();
+        } ImGui::PopStyleColor();
+
+        ImGuiIO& io = ImGui::GetIO();
+        if (ImGui::IsMouseClicked(0) && !io.WantCaptureMouse) {
+            float dxX = (io.MousePos.x / 800.0f) * 2.0f - 1.0f; float dxY = -((io.MousePos.y / 600.0f) * 2.0f - 1.0f);
+            if (ferramentaAtual == 0) {
+                AddBlocks(dxX, dxY, 0.1f, 0.1f, editorHits, editorBulletPattern, editorBulletCount);
+            }
+            else {
+                AddObstacles(dxX, dxY, obsW, obsH);
+            }
+        }
+        if (ImGui::IsMouseClicked(1) && !io.WantCaptureMouse) {
+            float dxX = (io.MousePos.x / 800.0f) * 2.0f - 1.0f; float dxY = -((io.MousePos.y / 600.0f) * 2.0f - 1.0f);
+            for (auto& b : blocks) {
+                if (!b.active) continue; if (dxX > b.x - b.width / 2 && dxX < b.x + b.width / 2 && dxY > b.y && dxY < b.y + b.height) {
+                    b.active = false; blocksRemaining--;
+                }
+            }
+            for (auto& o : obstacles) {
+                if (!o.active) continue; if (dxX > o.x - o.width / 2 && dxX < o.x + o.width / 2 && dxY > o.y && dxY < o.y + o.height) {
+                    o.active = false;
+                }
+            }
+        }
+    }
+
+    ImGui::End();
+    ImGui::Render();
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }

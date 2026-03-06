@@ -1,4 +1,6 @@
 #pragma once
 #include "Globals.h"
 
-void RenderImGuiDebugWindow();
+void UpdateEditor();
+void RenderEditor();
+void RenderEditorUI();

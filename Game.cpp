@@ -24,7 +24,7 @@ void InitGameplay(int selectedDifficulty, int selectedLives)
 	life = selectedLives; difficulty = selectedDifficulty; stage = 0;
 	iFrame = false; iFrameTimer = 0; paddleVisible = true; dashActive = false; forceFieldActive = false;
 	combo = 0; score = 0; paddleX = 0.0f; paddleHeight = paddleHeightNormal;
-	ballX = 0.75f; ballY = -0.5f; ballSize = 0.03f; ballVelY = 0.02f; ballVelX = 0.000001f;
+	ballX = 0.75f; ballY = -0.5f; ballSize = 0.03f; ballVelY = 0.02f;
 	InitStage(stage);
 }
 
@@ -164,11 +164,11 @@ void UpdateBall()
 		}
 	}
 
-	float dt = 1.0f; float nearestT = 1.0f; float normalX = 0.0f, normalY = 0.0f; bool collisionFound = false;
+	float nearestT = 1.0f; float normalX = 0.0f, normalY = 0.0f; bool collisionFound = false;
 	for (auto& obstacle : obstacles)
 	{
 		if (!obstacle.active) continue;
-		SweepResult res = SweptAABB(ballX - ballSize, ballY - ballSize, ballSize * 2, ballSize * 2, ballVelX * dt, ballVelY * dt, obstacle.x - obstacle.width / 2, obstacle.y, obstacle.width, obstacle.height);
+		SweepResult res = SweptAABB(ballX - ballSize, ballY - ballSize, ballSize * 2, ballSize * 2, ballVelX, ballVelY, obstacle.x - obstacle.width / 2, obstacle.y, obstacle.width, obstacle.height);
 		if (res.t < nearestT)
 		{
 			nearestT = res.t;
@@ -180,16 +180,16 @@ void UpdateBall()
 
 	if (collisionFound)
 	{
-		ballX += ballVelX * dt * (nearestT - 0.00001f);
-		ballY += ballVelY * dt * (nearestT - 0.00001f);
+		ballX += ballVelX * (nearestT - 0.00001f);
+		ballY += ballVelY * (nearestT - 0.00001f);
 
 		if (normalX != 0.0f) ballVelX = -ballVelX;
 		if (normalY != 0.0f) ballVelY = -ballVelY;
 	}
 	else
 	{
-		ballX += ballVelX * dt;
-		ballY += ballVelY * dt;
+		ballX += ballVelX;
+		ballY += ballVelY;
 	}
 
 

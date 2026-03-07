@@ -19,6 +19,15 @@ using namespace DirectX;
 // ==========================================
 // ENUMS E STRUCTS
 // ==========================================
+enum EditorMode {
+	EDITOR_MODE_PLAYER,
+	EDITOR_MODE_BALL,
+	EDITOR_MODE_STAGE,
+	EDITOR_MODE_OBSTACLE,
+	EDITOR_MODE_ENEMY,
+	EDITOR_MODE_BOSS
+};
+
 enum GameState {
 	STATE_START_MENU, 
 	STATE_DIFFICULTY_SELECT, 
@@ -47,6 +56,14 @@ struct Block {
 struct Obstacle {
 	float x, y, width, height; bool active;
 };
+
+struct ObstacleConfig {
+	float width;
+	float height;
+	float colorR, colorG, colorB, colorA;
+	char name[64];
+};
+
 struct Vertex {
 	float x, y, z;
 };
@@ -96,6 +113,7 @@ extern ID3D11PixelShader* pixelShaderMenu;
 extern double g_targetFPS;
 extern double g_maxFrameTime;
 extern GameState currentState;
+extern EditorMode currentEditorMode;
 extern int selectedMenuIndex;
 extern const char* mainMenuItems[];
 extern const int mainMenuCount;
@@ -165,3 +183,10 @@ extern std::vector<Projectile> projectiles;
 extern std::vector<Block> blocks;
 extern std::vector<Obstacle> obstacles;
 extern std::vector<EnemyBullet> enemyBullets;
+
+// Configs
+extern ObstacleConfig editorObstacleConfig;
+
+extern char editorObstacleNameInput[64];
+extern char editorObstacleWidthInput[32];
+extern char editorObstacleHeightInput[32];

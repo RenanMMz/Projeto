@@ -33,6 +33,7 @@ ID3D11PixelShader* pixelShaderMenu = nullptr;
 
 // Menu e Estado do Jogo
 GameState currentState = STATE_START_MENU;
+EditorMode currentEditorMode = EDITOR_MODE_PLAYER;
 int selectedMenuIndex = 0;
 const char* mainMenuItems[] = { "Start", "Options", "Close" };
 const int mainMenuCount = 3;
@@ -102,3 +103,10 @@ std::vector<Projectile> projectiles;
 std::vector<Block> blocks;
 std::vector<Obstacle> obstacles;
 std::vector<EnemyBullet> enemyBullets;
+
+// Configs
+ObstacleConfig editorObstacleConfig = { 0.3f, 0.02f, 1.0f, 1.0f, 0.0f, 1.0f, "obstacle_default"};
+
+char editorObstacleNameInput[64] = "obstacle_default";
+char editorObstacleWidthInput[32] = "0.3";
+char editorObstacleHeightInput[32] = "0.02";

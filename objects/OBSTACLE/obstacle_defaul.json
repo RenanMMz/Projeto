@@ -1,0 +1,11 @@
+{
+  "name": "obstacle_defaul",
+  "width": 0.3,
+  "height": 0.02,
+  "color": {
+    "r": 1,
+    "g": 1,
+    "b": 0,
+    "a": 1
+  }
+}

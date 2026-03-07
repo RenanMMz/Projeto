@@ -16,9 +16,9 @@ void RenderEditor() {
 	float clearColor[4] = { 0.0f, 0.0f, 0.2f, 1.0f };
 	deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
 
-    if (currentEditorMode == EDITOR_MODE_OBSTACLE) {
-        DrawObstaclePreview(0.0f, 0.0f);
-    }
+	if (currentEditorMode == EDITOR_MODE_OBSTACLE) {
+		DrawObstaclePreview(0.0f, 0.0f);
+	}
 }
 
 void RenderDebugUI()
@@ -62,194 +62,203 @@ void RenderDebugUI()
 	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }
 
-bool SaveObstacleConfig(const char* filename) {
-    CreateDirectoryA("objects/OBSTACLE", NULL);
+bool SaveObstacleConfig(const char* filename)
+{
+	CreateDirectoryA("objects", NULL);
+	CreateDirectoryA("objects/OBSTACLE", NULL);
 
-    std::string filepath = "objects/OBSTACLE";
-    filepath += filename;
-    filepath += ".json";
+	std::string filepath = "objects/OBSTACLE/";
+	filepath += filename;
+	filepath += ".json";
 
-    std::ofstream file(filepath);
-    if (!file.is_open()) {
-        return false;
-    };
+	OutputDebugStringA("Salvando em: ");
+	OutputDebugStringA(filepath.c_str());
+	OutputDebugStringA("\n");
 
-    file << "{\n";
-    file << "  \"name\": \"" << editorObstacleConfig.name << "\",\n";
-    file << "  \"width\": " << editorObstacleConfig.width << ",\n";
-    file << "  \"height\": " << editorObstacleConfig.height << ",\n";
-    file << "  \"color\": {\n";
-    file << "    \"r\": " << editorObstacleConfig.colorR << ",\n";
-    file << "    \"g\": " << editorObstacleConfig.colorG << ",\n";
-    file << "    \"b\": " << editorObstacleConfig.colorB << ",\n";
-    file << "    \"a\": " << editorObstacleConfig.colorA << "\n";
-    file << "  }\n";
-    file << "}\n";
+	std::ofstream file(filepath);
+	if (!file.is_open()) {
+		OutputDebugStringA("ERRO: Nao conseguiu abrir arquivo para escrita!\n");
+		return false;
+	}
 
-    file.close();
-    return true;
+	file << "{\n";
+	file << "  \"name\": \"" << editorObstacleConfig.name << "\",\n";
+	file << "  \"width\": " << editorObstacleConfig.width << ",\n";
+	file << "  \"height\": " << editorObstacleConfig.height << ",\n";
+	file << "  \"color\": {\n";
+	file << "    \"r\": " << editorObstacleConfig.colorR << ",\n";
+	file << "    \"g\": " << editorObstacleConfig.colorG << ",\n";
+	file << "    \"b\": " << editorObstacleConfig.colorB << ",\n";
+	file << "    \"a\": " << editorObstacleConfig.colorA << "\n";
+	file << "  }\n";
+	file << "}\n";
+
+	file.close();
+	OutputDebugStringA("Arquivo salvo com sucesso!\n");
+	return true;
 }
 
 bool LoadObstacleConfig(const char* filename) {
-    std::string filepath = "objects/OBSTACLE";
-    filepath += filename;
-    filepath += ".json";
+	std::string filepath = "objects/OBSTACLE/";
+	filepath += filename;
+	filepath += ".json";
 
-    std::ifstream file(filepath);
-    if (!file.is_open()) {
-        return false;
-    }
+	std::ifstream file(filepath);
+	if (!file.is_open()) {
+		OutputDebugStringA("ERRO: Nao conseguiu abrir arquivo para leitura!\n");
+		return false;
+	}
 
-    std::string line;
-    while (std::getline(file, line)) {
-        if (line.find("\"width\":") != std::string::npos) {
-            sscanf_s(line.c_str(), " \"width\": %f,", &editorObstacleConfig.width);
-        }
-        if (line.find("\"height\":") != std::string::npos) {
-            sscanf_s(line.c_str(), " \"height\": %f,", &editorObstacleConfig.height);
-        }
-        if (line.find("\"r\":") != std::string::npos) {
-            sscanf_s(line.c_str(), " \"r\": %f,", &editorObstacleConfig.colorR);
-        }
-        if (line.find("\"g\":") != std::string::npos) {
-            sscanf_s(line.c_str(), " \"g\": %f,", &editorObstacleConfig.colorG);
-        }
-        if (line.find("\"b\":") != std::string::npos) {
-            sscanf_s(line.c_str(), " \"b\": %f,", &editorObstacleConfig.colorB);
-        }
-        if (line.find("\"a\":") != std::string::npos) {
-            sscanf_s(line.c_str(), " \"a\": %f", &editorObstacleConfig.colorA);
-        }
-    }
+	std::string line;
+	while (std::getline(file, line)) {
+		if (line.find("\"width\":") != std::string::npos) {
+			sscanf_s(line.c_str(), " \"width\": %f,", &editorObstacleConfig.width);
+		}
+		if (line.find("\"height\":") != std::string::npos) {
+			sscanf_s(line.c_str(), " \"height\": %f,", &editorObstacleConfig.height);
+		}
+		if (line.find("\"r\":") != std::string::npos) {
+			sscanf_s(line.c_str(), " \"r\": %f,", &editorObstacleConfig.colorR);
+		}
+		if (line.find("\"g\":") != std::string::npos) {
+			sscanf_s(line.c_str(), " \"g\": %f,", &editorObstacleConfig.colorG);
+		}
+		if (line.find("\"b\":") != std::string::npos) {
+			sscanf_s(line.c_str(), " \"b\": %f,", &editorObstacleConfig.colorB);
+		}
+		if (line.find("\"a\":") != std::string::npos) {
+			sscanf_s(line.c_str(), " \"a\": %f", &editorObstacleConfig.colorA);
+		}
+	}
 
-    file.close();
-    return true;
+	file.close();
+	return true;
 }
 
 void RenderEditorObstacle()
 {
-    ImGui::Text("=== EDITOR OBSTACULOS ===");
-    ImGui::Separator();
+	ImGui::Text("=== EDITOR OBSTACULOS ===");
+	ImGui::Separator();
 
-    ImGui::InputText("Nome do Arquivo", editorObstacleNameInput, sizeof(editorObstacleNameInput));
-    strcpy_s(editorObstacleConfig.name, sizeof(editorObstacleConfig.name), editorObstacleNameInput);
+	ImGui::InputText("Nome do Arquivo", editorObstacleNameInput, sizeof(editorObstacleNameInput));
+	strcpy_s(editorObstacleConfig.name, sizeof(editorObstacleConfig.name), editorObstacleNameInput);
 
-    ImGui::Separator();
+	ImGui::Separator();
 
-    ImGui::InputText("Largura##obs", editorObstacleWidthInput, sizeof(editorObstacleWidthInput));
-    editorObstacleConfig.width = (float)atof(editorObstacleWidthInput);
+	ImGui::InputText("Largura##obs", editorObstacleWidthInput, sizeof(editorObstacleWidthInput));
+	editorObstacleConfig.width = (float)atof(editorObstacleWidthInput);
 
-    ImGui::InputText("Altura##obs", editorObstacleHeightInput, sizeof(editorObstacleHeightInput));
-    editorObstacleConfig.height = (float)atof(editorObstacleHeightInput);
+	ImGui::InputText("Altura##obs", editorObstacleHeightInput, sizeof(editorObstacleHeightInput));
+	editorObstacleConfig.height = (float)atof(editorObstacleHeightInput);
 
-    ImGui::Separator();
+	ImGui::Separator();
 
-    ImGui::SliderFloat("Cor R", &editorObstacleConfig.colorR, 0.0f, 1.0f);
-    ImGui::SliderFloat("Cor G", &editorObstacleConfig.colorG, 0.0f, 1.0f);
-    ImGui::SliderFloat("Cor B", &editorObstacleConfig.colorB, 0.0f, 1.0f);
-    ImGui::SliderFloat("Cor A", &editorObstacleConfig.colorA, 0.0f, 1.0f);
+	ImGui::SliderFloat("Cor R", &editorObstacleConfig.colorR, 0.0f, 1.0f);
+	ImGui::SliderFloat("Cor G", &editorObstacleConfig.colorG, 0.0f, 1.0f);
+	ImGui::SliderFloat("Cor B", &editorObstacleConfig.colorB, 0.0f, 1.0f);
+	ImGui::SliderFloat("Cor A", &editorObstacleConfig.colorA, 0.0f, 1.0f);
 
-    ImGui::Separator();
+	ImGui::Separator();
 
-    if (ImGui::Button("Salvar Obstaculo", ImVec2(200, 0))) {
-        if (SaveObstacleConfig(editorObstacleNameInput)) {
-            ImGui::OpenPopup("SaveSuccess");
-        }
-    }
+	if (ImGui::Button("Salvar Obstaculo", ImVec2(200, 0))) {
+		if (SaveObstacleConfig(editorObstacleNameInput)) {
+			ImGui::OpenPopup("SaveSuccess");
+		}
+	}
 
-    if (ImGui::Button("Carregar Obstaculo", ImVec2(200, 0))) {
-        if (LoadObstacleConfig(editorObstacleNameInput)) {
-            sprintf_s(editorObstacleWidthInput, sizeof(editorObstacleWidthInput), "%.4f", editorObstacleConfig.width);
-            sprintf_s(editorObstacleHeightInput, sizeof(editorObstacleHeightInput), "%.4f", editorObstacleConfig.height);
-            ImGui::OpenPopup("LoadSuccess");
-        }
-    }
+	if (ImGui::Button("Carregar Obstaculo", ImVec2(200, 0))) {
+		if (LoadObstacleConfig(editorObstacleNameInput)) {
+			sprintf_s(editorObstacleWidthInput, sizeof(editorObstacleWidthInput), "%.4f", editorObstacleConfig.width);
+			sprintf_s(editorObstacleHeightInput, sizeof(editorObstacleHeightInput), "%.4f", editorObstacleConfig.height);
+			ImGui::OpenPopup("LoadSuccess");
+		}
+	}
 
-    if (ImGui::BeginPopupModal("SaveSuccess")) {
-        ImGui::Text("Obstaculo salvo com sucesso!");
-        if (ImGui::Button("OK")) {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    }
+	if (ImGui::BeginPopupModal("SaveSuccess")) {
+		ImGui::Text("Obstaculo salvo com sucesso!");
+		if (ImGui::Button("OK")) {
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
 
-    if (ImGui::BeginPopupModal("LoadSuccess")) {
-        ImGui::Text("Obstaculo carregado com sucesso!");
-        if (ImGui::Button("OK")) {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    }
+	if (ImGui::BeginPopupModal("LoadSuccess")) {
+		ImGui::Text("Obstaculo carregado com sucesso!");
+		if (ImGui::Button("OK")) {
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
 }
 
 
 void RenderEditorPlayer()
 {
-    ImGui::Text("=== EDITOR JOGADOR (PADDLE) ===");
-    ImGui::SliderFloat("Posicao X##paddle", &paddleX, -1.0f, 1.0f);
-    ImGui::SliderFloat("Posicao Y##paddle", (float*)&paddleY, -1.0f, 1.0f);
-    ImGui::SliderFloat("Largura", &paddleWidth, 0.01f, 0.5f);
-    ImGui::SliderFloat("Altura", &paddleHeight, 0.01f, 0.5f);
-    ImGui::SliderFloat("Velocidade Dash", &dashSpeed, 0.01f, 0.1f);
-    if (ImGui::Button("Reset Paddle")) {
-        paddleX = 0.0f;
-        paddleWidth = 0.08f;
-        paddleHeight = 0.20f;
-        dashSpeed = 0.025f;
-    }
+	ImGui::Text("=== EDITOR JOGADOR (PADDLE) ===");
+	ImGui::SliderFloat("Posicao X##paddle", &paddleX, -1.0f, 1.0f);
+	ImGui::SliderFloat("Posicao Y##paddle", (float*)&paddleY, -1.0f, 1.0f);
+	ImGui::SliderFloat("Largura", &paddleWidth, 0.01f, 0.5f);
+	ImGui::SliderFloat("Altura", &paddleHeight, 0.01f, 0.5f);
+	ImGui::SliderFloat("Velocidade Dash", &dashSpeed, 0.01f, 0.1f);
+	if (ImGui::Button("Reset Paddle")) {
+		paddleX = 0.0f;
+		paddleWidth = 0.08f;
+		paddleHeight = 0.20f;
+		dashSpeed = 0.025f;
+	}
 }
 
 void RenderEditorBall()
 {
-    ImGui::Text("=== EDITOR BOLA ===");
-    ImGui::SliderFloat("Posicao X##ball", &ballX, -1.0f, 1.0f);
-    ImGui::SliderFloat("Posicao Y##ball", &ballY, -1.0f, 1.0f);
-    ImGui::SliderFloat("Velocidade X", &ballVelX, -0.1f, 0.1f);
-    ImGui::SliderFloat("Velocidade Y", &ballVelY, -0.1f, 0.1f);
-    ImGui::SliderFloat("Tamanho", &ballSize, 0.01f, 0.1f);
-    if (ImGui::Button("Reset Bola")) {
-        ballX = 0.0f;
-        ballY = -0.5f;
-        ballVelX = 0.000001f;
-        ballVelY = 0.02f;
-        ballSize = 0.03f;
-    }
+	ImGui::Text("=== EDITOR BOLA ===");
+	ImGui::SliderFloat("Posicao X##ball", &ballX, -1.0f, 1.0f);
+	ImGui::SliderFloat("Posicao Y##ball", &ballY, -1.0f, 1.0f);
+	ImGui::SliderFloat("Velocidade X", &ballVelX, -0.1f, 0.1f);
+	ImGui::SliderFloat("Velocidade Y", &ballVelY, -0.1f, 0.1f);
+	ImGui::SliderFloat("Tamanho", &ballSize, 0.01f, 0.1f);
+	if (ImGui::Button("Reset Bola")) {
+		ballX = 0.0f;
+		ballY = -0.5f;
+		ballVelX = 0.000001f;
+		ballVelY = 0.02f;
+		ballSize = 0.03f;
+	}
 }
 
 void RenderEditorStage()
 {
-    ImGui::Text("=== EDITOR ESTAGIO ===");
-    ImGui::Text("Estagio Atual: %d", stage);
-    ImGui::SliderInt("Selecionar Estagio", &stage, 0, 2);
-    ImGui::Text("Total de Inimigos: %d", blocksRemaining);
-    ImGui::Text("(Drag & Drop: Click esquerdo = adiciona, direito = remove)");
+	ImGui::Text("=== EDITOR ESTAGIO ===");
+	ImGui::Text("Estagio Atual: %d", stage);
+	ImGui::SliderInt("Selecionar Estagio", &stage, 0, 2);
+	ImGui::Text("Total de Inimigos: %d", blocksRemaining);
+	ImGui::Text("(Drag & Drop: Click esquerdo = adiciona, direito = remove)");
 }
 
 void RenderEditorEnemy()
 {
-    ImGui::Text("=== EDITOR INIMIGOS (BLOCOS) ===");
-    ImGui::Text("Total de Blocos/Inimigos: %d", (int)blocks.size());
-    static int enemyHits = 1;
-    ImGui::SliderInt("Vida do Bloco", &enemyHits, 1, 3);
-    static int bulletPatternEnemy = 0;
-    ImGui::SliderInt("Padrao de Tiro", &bulletPatternEnemy, 0, 5);
-    ImGui::Text("(Drag & Drop: Click esquerdo = adiciona, direito = remove)");
-    if (ImGui::Button("Limpar Todos Blocos")) {
-        blocks.clear();
-    }
+	ImGui::Text("=== EDITOR INIMIGOS (BLOCOS) ===");
+	ImGui::Text("Total de Blocos/Inimigos: %d", (int)blocks.size());
+	static int enemyHits = 1;
+	ImGui::SliderInt("Vida do Bloco", &enemyHits, 1, 3);
+	static int bulletPatternEnemy = 0;
+	ImGui::SliderInt("Padrao de Tiro", &bulletPatternEnemy, 0, 5);
+	ImGui::Text("(Drag & Drop: Click esquerdo = adiciona, direito = remove)");
+	if (ImGui::Button("Limpar Todos Blocos")) {
+		blocks.clear();
+	}
 }
 
 void RenderEditorBoss()
 {
-    ImGui::Text("=== EDITOR CHEFES ===");
-    ImGui::Text("Chefes: Inimigos com rota customizavel");
-    ImGui::Text("(Cada ponto clicado = waypoint da rota)");
-    static float bossSpeed = 0.05f;
-    ImGui::SliderFloat("Velocidade do Boss", &bossSpeed, 0.01f, 0.2f);
-    static int bossBulletPattern = 0;
-    ImGui::SliderInt("Padrao de Tiro", &bossBulletPattern, 0, 5);
-    static int bossLife = 10;
-    ImGui::SliderInt("Vida do Boss", &bossLife, 1, 50);
-    ImGui::Text("(Drag & Drop: Click esquerdo = adiciona waypoint, direito = remove)");
+	ImGui::Text("=== EDITOR CHEFES ===");
+	ImGui::Text("Chefes: Inimigos com rota customizavel");
+	ImGui::Text("(Cada ponto clicado = waypoint da rota)");
+	static float bossSpeed = 0.05f;
+	ImGui::SliderFloat("Velocidade do Boss", &bossSpeed, 0.01f, 0.2f);
+	static int bossBulletPattern = 0;
+	ImGui::SliderInt("Padrao de Tiro", &bossBulletPattern, 0, 5);
+	static int bossLife = 10;
+	ImGui::SliderInt("Vida do Boss", &bossLife, 1, 50);
+	ImGui::Text("(Drag & Drop: Click esquerdo = adiciona waypoint, direito = remove)");
 }
 

@@ -52,6 +52,7 @@ extern ID3D11InputLayout* inputLayout;
 extern ID3D11RasterizerState* rasterState;
 
 // Buffers
+extern ID3D11Buffer* paddleVertexBuffer;
 extern ID3D11Buffer* obstacleBuffer;
 extern ID3D11Buffer* vertexBuffer;
 extern ID3D11Buffer* blockVertexBuffer;

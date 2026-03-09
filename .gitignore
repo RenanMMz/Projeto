@@ -1,3 +1,4 @@
 .vscode/settings.json
 /.vs
 /TG/x64/Debug/TG.tlog
+/packages/directxtk_desktop_win10.2025.10.28.2

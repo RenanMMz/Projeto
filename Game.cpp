@@ -84,7 +84,7 @@ void UpdatePaddle()
 			{paddleX - paddleWidth / 2, paddleY + paddleHeight, 0.0f}, {paddleX - paddleWidth / 2, paddleY, 0.0f}, {paddleX + paddleWidth / 2, paddleY, 0.0f},
 			{paddleX - paddleWidth / 2, paddleY + paddleHeight, 0.0f}, {paddleX + paddleWidth / 2, paddleY, 0.0f}, {paddleX + paddleWidth / 2, paddleY + paddleHeight, 0.0f}
 		};
-		deviceContext->UpdateSubresource(vertexBuffer, 0, nullptr, vertices, 0, 0);
+		deviceContext->UpdateSubresource(paddleVertexBuffer, 0, nullptr, vertices, 0, 0);
 	}
 }
 

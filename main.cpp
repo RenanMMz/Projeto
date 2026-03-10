@@ -20,6 +20,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+	CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 	WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WindowProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, L"TorrouDX", NULL };
 	RegisterClassEx(&wc);
 	HWND hWnd = CreateWindow(L"TorrouDX", L"Torrou Engine - Bullet Hell Creator", WS_OVERLAPPEDWINDOW, 100, 100, 800, 600, NULL, NULL, wc.hInstance, NULL);
@@ -86,5 +87,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	timeEndPeriod(1);
 	ImGui_ImplDX11_Shutdown(); ImGui_ImplWin32_Shutdown(); ImGui::DestroyContext();
 	CleanD3D(); UnregisterClass(L"TorrouDX", wc.hInstance);
+	CoUninitialize();
 	return 0;
 }

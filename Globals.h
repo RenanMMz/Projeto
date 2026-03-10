@@ -9,6 +9,10 @@
 #include <sstream>
 #include <string>
 
+#include <DDSTextureLoader.h>
+#include <WICTextureLoader.h>
+#include <SpriteBatch.h> 
+#pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "D3DCompiler.lib")
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "user32.lib")
@@ -62,6 +66,7 @@ struct ObstacleConfig {
 	float height;
 	float colorR, colorG, colorB, colorA;
 	char name[64];
+	char texturePath[256];
 };
 
 struct Vertex {
@@ -87,6 +92,10 @@ extern ID3D11RenderTargetView* renderTargetView;
 extern ID3D11VertexShader* vertexShader;
 extern ID3D11InputLayout* inputLayout;
 extern ID3D11RasterizerState* rasterState;
+extern ID3D11VertexShader* vertexShaderTextured;
+extern ID3D11PixelShader* pixelShaderTextured;
+extern ID3D11Buffer* texturedVertexBuffer;
+extern ID3D11SamplerState* samplerState;
 
 // Buffers
 extern ID3D11Buffer* obstacleBuffer;
@@ -108,6 +117,7 @@ extern ID3D11PixelShader* pixelShaderBall;
 extern ID3D11PixelShader* pixelShaderProjectile;
 extern ID3D11PixelShader* pixelShaderEnemyBullet;
 extern ID3D11PixelShader* pixelShaderMenu;
+extern ID3D11ShaderResourceView* editorObstacleTexture;
 
 // Menu e Estado do Jogo
 extern double g_targetFPS;
@@ -190,3 +200,4 @@ extern ObstacleConfig editorObstacleConfig;
 extern char editorObstacleNameInput[64];
 extern char editorObstacleWidthInput[32];
 extern char editorObstacleHeightInput[32];
+extern char editorObstacleTexturePathInput[256];

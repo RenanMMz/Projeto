@@ -2,6 +2,8 @@
 #include <sstream>
 #include "Editor.h"
 #include "Render.h"
+#include <windows.h>
+#include <commdlg.h>
 #include "Level.h"
 #include "./imgui/imgui.h"
 #include "./imgui/imgui_impl_win32.h"
@@ -85,6 +87,7 @@ bool SaveObstacleConfig(const char* filename)
 	file << "  \"name\": \"" << editorObstacleConfig.name << "\",\n";
 	file << "  \"width\": " << editorObstacleConfig.width << ",\n";
 	file << "  \"height\": " << editorObstacleConfig.height << ",\n";
+	file << "  \"texture\": \"" << editorObstacleConfig.texturePath << "\",\n";
 	file << "  \"color\": {\n";
 	file << "    \"r\": " << editorObstacleConfig.colorR << ",\n";
 	file << "    \"g\": " << editorObstacleConfig.colorG << ",\n";
@@ -116,6 +119,14 @@ bool LoadObstacleConfig(const char* filename) {
 		}
 		if (line.find("\"height\":") != std::string::npos) {
 			sscanf_s(line.c_str(), " \"height\": %f,", &editorObstacleConfig.height);
+		}
+		if (line.find("\"texture\":") != std::string::npos) {
+			size_t start = line.find("\"") + 1;
+			size_t end = line.rfind("\"");
+			if (start < end) {
+				std::string texPath = line.substr(start, end - start);
+				strcpy_s(editorObstacleConfig.texturePath, sizeof(editorObstacleConfig.texturePath), texPath.c_str());
+			}
 		}
 		if (line.find("\"r\":") != std::string::npos) {
 			sscanf_s(line.c_str(), " \"r\": %f,", &editorObstacleConfig.colorR);
@@ -160,6 +171,28 @@ void RenderEditorObstacle()
 
 	ImGui::Separator();
 
+	ImGui::Text("Textura: %s", editorObstacleConfig.texturePath[0] != '\0' ? editorObstacleConfig.texturePath : "(nenhuma)");
+
+	if (ImGui::Button("Selecionar Textura", ImVec2(200, 0))) {
+		if (OpenTextureFileDialog(editorObstacleTexturePathInput, sizeof(editorObstacleTexturePathInput))) {
+			strcpy_s(editorObstacleConfig.texturePath, sizeof(editorObstacleConfig.texturePath), editorObstacleTexturePathInput);
+			LoadObstacleTexture(editorObstacleConfig.texturePath);
+		}
+	}
+
+	if (editorObstacleConfig.texturePath[0] != '\0') {
+		std::ifstream test(editorObstacleConfig.texturePath);
+		bool fileExists = test.good();
+		test.close();
+
+		ImGui::TextColored(
+			fileExists ? ImVec4(0, 1, 0, 1) : ImVec4(1, 0, 0, 1),
+			fileExists ? "Arquivo encontrado" : "Arquivo nao encontrado"
+		);
+	}
+
+	ImGui::Separator();
+
 	if (ImGui::Button("Salvar Obstaculo", ImVec2(200, 0))) {
 		if (SaveObstacleConfig(editorObstacleNameInput)) {
 			ImGui::OpenPopup("SaveSuccess");
@@ -189,6 +222,59 @@ void RenderEditorObstacle()
 		}
 		ImGui::EndPopup();
 	}
+}
+
+bool OpenTextureFileDialog(char* outPath, int maxLength)
+{
+	OPENFILENAMEA ofn = {};
+	char szFile[256] = {};
+
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = g_hWnd;
+	ofn.lpstrFile = szFile;
+	ofn.nMaxFile = sizeof(szFile);
+	ofn.lpstrFilter = "Bitmap Files (*.bmp)\0*.bmp\0PNG Files (*.png)\0*.png\0All Files (*.*)\0*.*\0";
+	ofn.nFilterIndex = 1;
+	ofn.lpstrFileTitle = NULL;
+	ofn.nMaxFileTitle = 0;
+	ofn.lpstrInitialDir = NULL;
+	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+	if (GetOpenFileNameA(&ofn)) {
+		strncpy_s(outPath, maxLength, szFile, maxLength - 1);
+		return true;
+	}
+
+	return false;
+}
+
+bool LoadObstacleTexture(const char* filePath)
+{
+	if (editorObstacleTexture) {
+		editorObstacleTexture->Release();
+		editorObstacleTexture = nullptr;
+	}
+	if (!filePath || filePath[0] == '\0') return true;
+
+	wchar_t wPath[256];
+	MultiByteToWideChar(CP_ACP, 0, filePath, -1, wPath, 256);
+
+	HRESULT hr = DirectX::CreateWICTextureFromFile(
+		device,
+		wPath,
+		nullptr,
+		&editorObstacleTexture
+	);
+
+	if (FAILED(hr)) {
+		OutputDebugStringA("ERRO: Falha ao carregar textura WIC!\n");
+		return false;
+	}
+
+	OutputDebugStringA("Textura carregada com sucesso: ");
+	OutputDebugStringA(filePath);
+	OutputDebugStringA("\n");
+	return true;
 }
 
 

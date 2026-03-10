@@ -15,6 +15,21 @@ const char* g_PS_Obstacle = "struct PS_INPUT { float4 pos : SV_POSITION; }; floa
 const char* g_PS_Block = "cbuffer ColorBuffer : register(b0) { float4 blockColor; }; struct PS_INPUT { float4 pos : SV_POSITION; }; float4 PSMain(PS_INPUT input) : SV_TARGET { return blockColor; }";
 const char* g_PS_Bullet = "struct PS_INPUT { float4 pos : SV_POSITION; }; float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(0.900f,0.2500f,0.950f,1.0f); }";
 const char* g_PS_Menu = "struct PS_INPUT { float4 pos : SV_POSITION; }; float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(1.0f,1.0f,1.0f,1.0f); }";
+const char* g_VS_Textured =
+"struct VS_INPUT { float3 pos : POSITION; float2 uv : TEXCOORD0; };"
+"struct PS_INPUT { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };"
+"PS_INPUT VSMain(VS_INPUT input) {"
+"  PS_INPUT o; o.pos = float4(input.pos, 1.0f); o.uv = input.uv; return o;"
+"}";
+
+// Pixel shader que amostra a textura
+const char* g_PS_Textured =
+"Texture2D tex : register(t0);"
+"SamplerState samp : register(s0);"
+"struct PS_INPUT { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };"
+"float4 PSMain(PS_INPUT input) : SV_TARGET {"
+"  return tex.Sample(samp, input.uv);"
+"}";
 
 bool InitD3D(HWND hWnd) {
 	DXGI_SWAP_CHAIN_DESC scd = {}; scd.BufferCount = 1; scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT; scd.OutputWindow = hWnd; scd.SampleDesc.Count = 1; scd.Windowed = TRUE;
@@ -64,6 +79,43 @@ bool InitD3D(HWND hWnd) {
 	D3D11_BUFFER_DESC bdBlockColor = {}; bdBlockColor.Usage = D3D11_USAGE_DEFAULT; bdBlockColor.ByteWidth = sizeof(XMFLOAT4); bdBlockColor.BindFlags = D3D11_BIND_CONSTANT_BUFFER; hr = device->CreateBuffer(&bdBlockColor, nullptr, &blockColorBuffer);
 	D3D11_BUFFER_DESC bdObstacle = {}; bdObstacle.Usage = D3D11_USAGE_DEFAULT; bdObstacle.ByteWidth = sizeof(Vertex) * 6; bdObstacle.BindFlags = D3D11_BIND_VERTEX_BUFFER; hr = device->CreateBuffer(&bdObstacle, nullptr, &obstacleBuffer);
 	D3D11_BUFFER_DESC bdBullet = {}; bdBullet.Usage = D3D11_USAGE_DEFAULT; bdBullet.ByteWidth = sizeof(Vertex) * 6; bdBullet.BindFlags = D3D11_BIND_VERTEX_BUFFER; hr = device->CreateBuffer(&bdBullet, nullptr, &enemyBulletBuffer);
+
+	struct VertexUV {
+		float x, y, z, u, v;
+	};
+
+	ID3DBlob* vsTexBlob = nullptr; ID3DBlob* psTexBlob = nullptr;
+	D3DCompile(g_VS_Textured, strlen(g_VS_Textured), nullptr, nullptr, nullptr, "VSMain", "vs_4_0", 0, 0, &vsTexBlob, nullptr);
+	D3DCompile(g_PS_Textured, strlen(g_PS_Textured), nullptr, nullptr, nullptr, "PSMain", "ps_4_0", 0, 0, &psTexBlob, nullptr);
+
+	device->CreateVertexShader(vsTexBlob->GetBufferPointer(), vsTexBlob->GetBufferSize(), nullptr, &vertexShaderTextured);
+	device->CreatePixelShader(psTexBlob->GetBufferPointer(), psTexBlob->GetBufferSize(), nullptr, &pixelShaderTextured);
+
+	// Input layout com POSITION + TEXCOORD
+	D3D11_INPUT_ELEMENT_DESC layoutTex[] = {
+		{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,                            D3D11_INPUT_PER_VERTEX_DATA, 0},
+		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, sizeof(float) * 3,               D3D11_INPUT_PER_VERTEX_DATA, 0},
+	};
+	// Reutiliza o inputLayout existente ou cria um novo — aqui criamos separado:
+	// (declare extern ID3D11InputLayout* inputLayoutTextured; no Globals se quiser separar)
+	// Por simplicidade, vamos guardar no próprio inputLayout textured inline na DrawObstaclePreview.
+
+	// Buffer de vértices texturizados (quad = 6 vértices)
+	D3D11_BUFFER_DESC bdTex = {};
+	bdTex.Usage = D3D11_USAGE_DEFAULT;
+	bdTex.ByteWidth = sizeof(VertexUV) * 6;
+	bdTex.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+	device->CreateBuffer(&bdTex, nullptr, &texturedVertexBuffer);
+
+	// Sampler state (filtro bilinear, wrap)
+	D3D11_SAMPLER_DESC sd = {};
+	sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+	sd.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+	sd.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+	sd.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+	device->CreateSamplerState(&sd, &samplerState);
+
+	vsTexBlob->Release(); psTexBlob->Release();
 
 	life = 3; return true;
 }
@@ -256,21 +308,62 @@ void RenderEditorUI()
 	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }
 
-void DrawObstaclePreview(float centerX, float centerY) {
-	float halfWidth = editorObstacleConfig.width / 2.0f;
-	float halfHeight = editorObstacleConfig.height / 2.0f;
+void DrawObstaclePreview(float centerX, float centerY)
+{
+	float hw = editorObstacleConfig.width / 2.0f;
+	float hh = editorObstacleConfig.height / 2.0f;
+	float x1 = centerX - hw, x2 = centerX + hw;
+	float y1 = centerY - hh, y2 = centerY + hh;
 
-	float x1 = centerX - halfWidth;
-	float x2 = centerX + halfWidth;
-	float y1 = centerY - halfHeight;
-	float y2 = centerY + halfHeight;
-
-	float color[4] = {
-		editorObstacleConfig.colorR,
-		editorObstacleConfig.colorG,
-		editorObstacleConfig.colorB,
-		editorObstacleConfig.colorA
+	struct VertexUV {
+		float x, y, z, u, v;
 	};
-	
-    DrawRectButton(x1, y1, x2, y2, color);
+
+	VertexUV verts[] = {
+		{x1, y2, 0, 0, 0},
+		{x1, y1, 0, 0, 1},
+		{x2, y1, 0, 1, 1},
+		{x1, y2, 0, 0, 0},
+		{x2, y1, 0, 1, 1},
+		{x2, y2, 0, 1, 0},
+	};
+
+	deviceContext->UpdateSubresource(texturedVertexBuffer, 0, nullptr, verts, 0, 0);
+
+	static ID3D11InputLayout* ilTex = nullptr;
+	if (!ilTex) {
+		ID3DBlob* vsBlob = nullptr;
+		D3DCompile(g_VS_Textured, strlen(g_VS_Textured), nullptr, nullptr, nullptr,
+			"VSMain", "vs_4_0", 0, 0, &vsBlob, nullptr);
+		D3D11_INPUT_ELEMENT_DESC layout[] = {
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,            D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, sizeof(float) * 3, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		};
+		device->CreateInputLayout(layout, 2, vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), &ilTex);
+		vsBlob->Release();
+	}
+
+	UINT stride = sizeof(VertexUV), offset = 0;
+	deviceContext->IASetInputLayout(ilTex);
+	deviceContext->IASetVertexBuffers(0, 1, &texturedVertexBuffer, &stride, &offset);
+	deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	deviceContext->VSSetShader(vertexShaderTextured, nullptr, 0);
+
+	if (editorObstacleTexture) {
+		deviceContext->PSSetShader(pixelShaderTextured, nullptr, 0);
+		deviceContext->PSSetShaderResources(0, 1, &editorObstacleTexture);
+		deviceContext->PSSetSamplers(0, 1, &samplerState);
+	}
+	else {
+		float color[4] = {
+			editorObstacleConfig.colorR, editorObstacleConfig.colorG,
+			editorObstacleConfig.colorB, editorObstacleConfig.colorA
+		};
+		ColorConstantBuffer cb = { DirectX::XMFLOAT4(color[0], color[1], color[2], color[3]) };
+		deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &cb, 0, 0);
+		deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0);
+		deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer);
+	}
+
+	deviceContext->Draw(6, 0);
 }

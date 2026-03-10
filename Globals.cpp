@@ -30,6 +30,11 @@ ID3D11PixelShader* pixelShaderBall = nullptr;
 ID3D11PixelShader* pixelShaderProjectile = nullptr;
 ID3D11PixelShader* pixelShaderEnemyBullet = nullptr;
 ID3D11PixelShader* pixelShaderMenu = nullptr;
+ID3D11ShaderResourceView* editorObstacleTexture = nullptr;
+ID3D11VertexShader* vertexShaderTextured = nullptr;
+ID3D11PixelShader* pixelShaderTextured = nullptr;
+ID3D11Buffer* texturedVertexBuffer = nullptr;
+ID3D11SamplerState* samplerState = nullptr;
 
 // Menu e Estado do Jogo
 GameState currentState = STATE_START_MENU;
@@ -105,8 +110,9 @@ std::vector<Obstacle> obstacles;
 std::vector<EnemyBullet> enemyBullets;
 
 // Configs
-ObstacleConfig editorObstacleConfig = { 0.3f, 0.02f, 1.0f, 1.0f, 0.0f, 1.0f, "obstacle_default"};
+ObstacleConfig editorObstacleConfig = { 0.3f, 0.02f, 1.0f, 1.0f, 0.0f, 1.0f, "obstacle_default", "" };
 
 char editorObstacleNameInput[64] = "obstacle_default";
 char editorObstacleWidthInput[32] = "0.3";
 char editorObstacleHeightInput[32] = "0.02";
+char editorObstacleTexturePathInput[256] = "";

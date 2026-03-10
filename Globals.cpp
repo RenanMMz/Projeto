@@ -20,6 +20,7 @@ ID3D11Buffer* forceFieldBuffer = nullptr;
 ID3D11Buffer* dashShieldBuffer = nullptr;
 ID3D11Buffer* blockColorBuffer = nullptr;
 ID3D11Buffer* enemyBulletBuffer = nullptr;
+ID3D11Buffer* paddleVertexBuffer = nullptr;
 
 // Shaders
 ID3D11PixelShader* pixelShaderObstacle = nullptr;
@@ -80,7 +81,7 @@ bool paddleVisible = true;
 // Bola
 float ballX = 0.75f;
 float ballY = -0.5f;
-float ballVelX = 0.000001f;
+float ballVelX = 0.0f;
 float ballVelY = 0.02f;
 float ballSize = 0.03f;
 

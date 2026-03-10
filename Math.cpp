@@ -8,22 +8,27 @@ SweepResult SweptAABB(float bx, float by, float bw, float bh, float vx, float vy
 
     if (vy > 0.0f) { yInvEntry = (oy - (by + bh)); yInvExit = ((oy + oh) - by); }
     else { yInvEntry = ((oy + oh) - by); yInvExit = (oy - (by + bh)); }
+    
+    SweepResult result;
+    result.t = 1.0f;
+    result.nx = result.ny = 0.0f;
 
     float xEntry, yEntry, xExit, yExit;
-    if (vx == 0.0f) { xEntry = -INFINITY; xExit = INFINITY; }
+    if (vx == 0.0f) { 
+        if (bx + bw <= ox || bx >= ox + ow) return result;
+        xEntry = -INFINITY; xExit = INFINITY; }
     else { xEntry = xInvEntry / vx; xExit = xInvExit / vx; }
 
-    if (vy == 0.0f) { yEntry = -INFINITY; yExit = INFINITY; }
+    if (vy == 0.0f) {
+        if (by + bh <= oy || by >= oy + oh) return result;
+        yEntry = -INFINITY; yExit = INFINITY; }
     else { yEntry = yInvEntry / vy; yExit = yInvExit / vy; }
 
     float entryTime = max(xEntry, yEntry);
     float exitTime = min(xExit, yExit);
 
-    SweepResult result;
-    result.t = 1.0f;
-    result.nx = result.ny = 0.0f;
 
-    if (entryTime > exitTime || (xEntry < 0.0f && yEntry < 0.0f) || xEntry > 1.0f || yEntry > 1.0f)
+    if (entryTime > exitTime || entryTime < 0.0f || entryTime > 1.0f)
         return result;
 
     result.t = entryTime;

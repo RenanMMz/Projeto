@@ -6,7 +6,6 @@
 #include "./imgui/imgui_impl_win32.h"
 #include "./imgui/imgui_impl_dx11.h"
 
-// Shaders como strings mantidos unicamente no render
 const char* g_VS = "struct VS_INPUT { float3 pos : POSITION; }; struct PS_INPUT { float4 pos : SV_POSITION; }; PS_INPUT VSMain(VS_INPUT input) { PS_INPUT output; output.pos = float4(input.pos,1.0f); return output; }";
 const char* g_PS = "struct PS_INPUT { float4 pos : SV_POSITION; }; float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(1.0f,0.0f,0.0f,1.0f); }";
 const char* g_PS_Ball = "struct PS_INPUT { float4 pos : SV_POSITION; }; float4 PSMain(PS_INPUT input) : SV_TARGET { return float4(0.0f,1.0f,0.0f,1.0f); }";
@@ -22,7 +21,6 @@ const char* g_VS_Textured =
 "  PS_INPUT o; o.pos = float4(input.pos, 1.0f); o.uv = input.uv; return o;"
 "}";
 
-// Pixel shader que amostra a textura
 const char* g_PS_Textured =
 "Texture2D tex : register(t0);"
 "SamplerState samp : register(s0);"
@@ -91,16 +89,10 @@ bool InitD3D(HWND hWnd) {
 	device->CreateVertexShader(vsTexBlob->GetBufferPointer(), vsTexBlob->GetBufferSize(), nullptr, &vertexShaderTextured);
 	device->CreatePixelShader(psTexBlob->GetBufferPointer(), psTexBlob->GetBufferSize(), nullptr, &pixelShaderTextured);
 
-	// Input layout com POSITION + TEXCOORD
 	D3D11_INPUT_ELEMENT_DESC layoutTex[] = {
 		{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,                            D3D11_INPUT_PER_VERTEX_DATA, 0},
 		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, sizeof(float) * 3,               D3D11_INPUT_PER_VERTEX_DATA, 0},
 	};
-	// Reutiliza o inputLayout existente ou cria um novo — aqui criamos separado:
-	// (declare extern ID3D11InputLayout* inputLayoutTextured; no Globals se quiser separar)
-	// Por simplicidade, vamos guardar no próprio inputLayout textured inline na DrawObstaclePreview.
-
-	// Buffer de vértices texturizados (quad = 6 vértices)
 	D3D11_BUFFER_DESC bdTex = {};
 	bdTex.Usage = D3D11_USAGE_DEFAULT;
 	bdTex.ByteWidth = sizeof(VertexUV) * 6;
@@ -116,6 +108,20 @@ bool InitD3D(HWND hWnd) {
 	device->CreateSamplerState(&sd, &samplerState);
 
 	vsTexBlob->Release(); psTexBlob->Release();
+
+	{
+		ID3DBlob* vsForLayout = nullptr;
+		D3DCompile(g_VS_Textured, strlen(g_VS_Textured), nullptr, nullptr, nullptr,
+			"VSMain", "vs_4_0", 0, 0, &vsForLayout, nullptr);
+		D3D11_INPUT_ELEMENT_DESC layoutTex[] = {
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,              D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, sizeof(float) * 3, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		};
+		device->CreateInputLayout(layoutTex, 2,
+			vsForLayout->GetBufferPointer(), vsForLayout->GetBufferSize(),
+			&inputLayoutTextured);
+		vsForLayout->Release();
+	}
 
 	life = 3; return true;
 }
@@ -152,23 +158,124 @@ void DrawBlocksRemaining(HWND hwnd, int blocksRemaining) {
 	wchar_t buffer[32]; swprintf(buffer, 32, L"Blocks Remaining: %d", blocksRemaining); TextOutW(hdc, 200, 10, buffer, (int)wcslen(buffer)); ReleaseDC(hwnd, hdc);
 }
 
+static void DrawTexturedQuad(ID3D11ShaderResourceView* srv,
+	float x1, float y1, float x2, float y2)
+{
+	if (!srv) return;
+	struct VertexUV {
+		float x, y, z, u, v;
+	};
+	VertexUV verts[] = {
+		{x1, y2, 0, 0, 0},
+		{x1, y1, 0, 0, 1},
+		{x2, y1, 0, 1, 1},
+		{x1, y2, 0, 0, 0},
+		{x2, y1, 0, 1, 1},
+		{x2, y2, 0, 1, 0},
+	};
+	deviceContext->UpdateSubresource(texturedVertexBuffer, 0, nullptr, verts, 0, 0);
+	UINT stride = sizeof(VertexUV), offset = 0;
+	deviceContext->IASetInputLayout(inputLayoutTextured);
+	deviceContext->IASetVertexBuffers(0, 1, &texturedVertexBuffer, &stride, &offset);
+	deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	deviceContext->VSSetShader(vertexShaderTextured, nullptr, 0);
+	deviceContext->PSSetShader(pixelShaderTextured, nullptr, 0);
+	deviceContext->PSSetShaderResources(0, 1, &srv);
+	deviceContext->PSSetSamplers(0, 1, &samplerState);
+	deviceContext->Draw(6, 0);
+}
+
+static void DrawMenuBackground(ID3D11ShaderResourceView* bgTex)
+{
+	DrawTexturedQuad(bgTex, -1.0f, -1.0f, 1.0f, 1.0f);
+}
+
+static void DrawMenuLogo()
+{
+	if (!menuTitleTexture) return;
+	float hw = editorMenuConfig.logoWidth / 2.0f;
+	float hh = editorMenuConfig.logoHeight / 2.0f;
+	DrawTexturedQuad(menuTitleTexture,
+		editorMenuConfig.logoX - hw, editorMenuConfig.logoY - hh,
+		editorMenuConfig.logoX + hw, editorMenuConfig.logoY + hh);
+}
+
+static void DrawMenuButton(float x1, float y1, float x2, float y2,
+	const float color[4], bool selected)
+{
+	Vertex vertices[] = {
+		{x1,y1,0},{x1,y2,0},{x2,y2,0},
+		{x1,y1,0},{x2,y2,0},{x2,y1,0}
+	};
+	deviceContext->UpdateSubresource(vertexBuffer, 0, nullptr, vertices, 0, 0);
+	ColorConstantBuffer cb = { DirectX::XMFLOAT4(color[0],color[1],color[2],color[3]) };
+	deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &cb, 0, 0);
+	deviceContext->IASetInputLayout(inputLayout);
+	deviceContext->VSSetShader(vertexShader, nullptr, 0);
+	deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0);
+	deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer);
+	UINT stride = sizeof(Vertex), offset = 0;
+	deviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+	deviceContext->Draw(6, 0);
+
+	if (selected && menuSelectorTexture) {
+		float btnH = y2 - y1;
+		float iconSz = btnH * 0.7f;                
+		float margin = btnH * 0.15f;              
+		float ix1 = x1 + margin;
+		float ix2 = ix1 + iconSz;
+		float iy1 = y1 + (btnH - iconSz) / 2.0f;  
+		float iy2 = iy1 + iconSz;
+		DrawTexturedQuad(menuSelectorTexture, ix1, iy1, ix2, iy2);
+	}
+}
+
 void RenderMenu() {
-	float clearColor[4] = { 0.05f, 0.05f, 0.1f, 1.0f }; deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
-	float startY = 0.2f; float spacing = 0.3f; float buttonWidth = 0.8f; float buttonHeight = 0.2f;
-	XMFLOAT4 colorNormal = XMFLOAT4(0.3f, 0.3f, 0.8f, 1.0f); XMFLOAT4 colorSelected = XMFLOAT4(1.0f, 1.0f, 0.3f, 1.0f);
+	float clearColor[4] = {
+		editorMenuConfig.bgColorR, editorMenuConfig.bgColorG,
+		editorMenuConfig.bgColorB, editorMenuConfig.bgColorA
+	};
+	deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
+	DrawMenuBackground(menuBgTexture);
+	DrawMenuLogo();
+
+	float startY = 0.2f, spacing = 0.3f, buttonWidth = 0.8f, buttonHeight = 0.2f;
+	float colorNormal[4] = { editorMenuConfig.buttonColorR,   editorMenuConfig.buttonColorG,
+								editorMenuConfig.buttonColorB,   editorMenuConfig.buttonColorA };
+	float colorSelected[4] = { editorMenuConfig.selectedColorR, editorMenuConfig.selectedColorG,
+								editorMenuConfig.selectedColorB, editorMenuConfig.selectedColorA };
+
 	for (int i = 0; i < mainMenuCount; i++) {
-		float yCenter = startY - i * spacing; XMFLOAT4 color = (selectedMenuIndex == i) ? colorSelected : colorNormal;
-		DrawRectButton(-buttonWidth / 2.0f, yCenter + buttonHeight / 2.0f, buttonWidth / 2.0f, yCenter - buttonHeight / 2.0f, &color.x);
+		bool sel = (selectedMenuIndex == i);
+		float yCenter = startY - i * spacing;
+		float x1 = -buttonWidth / 2.0f, x2 = buttonWidth / 2.0f;
+		float y1 = yCenter - buttonHeight / 2.0f, y2 = yCenter + buttonHeight / 2.0f;
+		DrawMenuButton(x1, y1, x2, y2, sel ? colorSelected : colorNormal, sel);
 	}
 }
 
 void RenderDiffSelect() {
-	float clearColor[4] = { 0.05f, 0.05f, 0.1f, 1.0f }; deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
-	float startY = 0.5f; float spacing = 0.3f; float buttonWidth = 0.8f; float buttonHeight = 0.2f;
-	XMFLOAT4 colorNormal = XMFLOAT4(0.3f, 0.3f, 0.8f, 1.0f); XMFLOAT4 colorSelected = XMFLOAT4(1.0f, 1.0f, 0.3f, 1.0f);
+	float clearColor[4] = {
+		editorMenuConfig.bgColorR, editorMenuConfig.bgColorG,
+		editorMenuConfig.bgColorB, editorMenuConfig.bgColorA
+	};
+	deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
+	DrawMenuBackground(menuBgTexture);
+	DrawMenuLogo();
+
+	float startY = 0.5f, spacing = 0.3f, buttonWidth = 0.8f, buttonHeight = 0.2f;
+	float colorNormal[4] = { editorMenuConfig.buttonColorR,   editorMenuConfig.buttonColorG,
+								editorMenuConfig.buttonColorB,   editorMenuConfig.buttonColorA };
+	float colorSelected[4] = { editorMenuConfig.selectedColorR, editorMenuConfig.selectedColorG,
+								editorMenuConfig.selectedColorB, editorMenuConfig.selectedColorA };
+
 	for (int i = 0; i < difficultyCount; i++) {
-		float yCenter = startY - i * spacing; XMFLOAT4 color = (selectedMenuIndex == i) ? colorSelected : colorNormal;
-		DrawRectButton(-buttonWidth / 2.0f, yCenter + buttonHeight / 2.0f, buttonWidth / 2.0f, yCenter - buttonHeight / 2.0f, &color.x);
+		bool sel = (selectedMenuIndex == i);
+		float yCenter = startY - i * spacing;
+		float x1 = -buttonWidth / 2.0f, x2 = buttonWidth / 2.0f;
+		float y1 = yCenter - buttonHeight / 2.0f, y2 = yCenter + buttonHeight / 2.0f;
+		DrawMenuButton(x1, y1, x2, y2, sel ? colorSelected : colorNormal, sel);
 	}
 }
 
@@ -238,75 +345,7 @@ void CleanD3D() {
 }
 
 
-void RenderEditorUI()
-{
-	ImGui_ImplDX11_NewFrame();
-	ImGui_ImplWin32_NewFrame();
-	ImGui::NewFrame();
-
-	ImGui::Begin("Game Engine - TorrouDX - EDITOR MODE");
-
-	bool check = (currentState == STATE_EDITOR);
-	if (ImGui::Checkbox("Habilitar Modo de Edicao", &check))
-	{
-		if (check) {
-			currentState = STATE_EDITOR;
-		}
-		else {
-			currentState = STATE_START_MENU;
-		}
-	}
-	ImGui::Separator();
-
-	ImGui::Text("MODO EDITOR");
-
-	int mode = (int)currentEditorMode;
-	if (ImGui::RadioButton("Jogador", &mode, EDITOR_MODE_PLAYER)) {
-		currentEditorMode = EDITOR_MODE_PLAYER;
-	}
-	if (ImGui::RadioButton("Bola", &mode, EDITOR_MODE_BALL)) {
-		currentEditorMode = EDITOR_MODE_BALL;
-	}
-	if (ImGui::RadioButton("Estagio", &mode, EDITOR_MODE_STAGE)) {
-		currentEditorMode = EDITOR_MODE_STAGE;
-	}
-	if (ImGui::RadioButton("Obstaculos", &mode, EDITOR_MODE_OBSTACLE)) {
-		currentEditorMode = EDITOR_MODE_OBSTACLE;
-	}
-	if (ImGui::RadioButton("Inimigos", &mode, EDITOR_MODE_ENEMY)) {
-		currentEditorMode = EDITOR_MODE_ENEMY;
-	}
-	if (ImGui::RadioButton("Chefes", &mode, EDITOR_MODE_BOSS)) {
-		currentEditorMode = EDITOR_MODE_BOSS;
-	}
-
-	ImGui::Separator();
-
-	switch (currentEditorMode) {
-	case EDITOR_MODE_PLAYER:
-		RenderEditorPlayer();
-		break;
-	case EDITOR_MODE_BALL:
-		RenderEditorBall();
-		break;
-	case EDITOR_MODE_STAGE:
-		RenderEditorStage();
-		break;
-	case EDITOR_MODE_OBSTACLE:
-		RenderEditorObstacle();
-		break;
-	case EDITOR_MODE_ENEMY:
-		RenderEditorEnemy();
-		break;
-	case EDITOR_MODE_BOSS:
-		RenderEditorBoss();
-		break;
-	}
-
-	ImGui::End();
-	ImGui::Render();
-	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-}
+// RenderEditorUI foi movido para Editor.cpp
 
 void DrawObstaclePreview(float centerX, float centerY)
 {
@@ -330,21 +369,8 @@ void DrawObstaclePreview(float centerX, float centerY)
 
 	deviceContext->UpdateSubresource(texturedVertexBuffer, 0, nullptr, verts, 0, 0);
 
-	static ID3D11InputLayout* ilTex = nullptr;
-	if (!ilTex) {
-		ID3DBlob* vsBlob = nullptr;
-		D3DCompile(g_VS_Textured, strlen(g_VS_Textured), nullptr, nullptr, nullptr,
-			"VSMain", "vs_4_0", 0, 0, &vsBlob, nullptr);
-		D3D11_INPUT_ELEMENT_DESC layout[] = {
-			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,            D3D11_INPUT_PER_VERTEX_DATA, 0},
-			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, sizeof(float) * 3, D3D11_INPUT_PER_VERTEX_DATA, 0},
-		};
-		device->CreateInputLayout(layout, 2, vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), &ilTex);
-		vsBlob->Release();
-	}
-
 	UINT stride = sizeof(VertexUV), offset = 0;
-	deviceContext->IASetInputLayout(ilTex);
+	deviceContext->IASetInputLayout(inputLayoutTextured);
 	deviceContext->IASetVertexBuffers(0, 1, &texturedVertexBuffer, &stride, &offset);
 	deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	deviceContext->VSSetShader(vertexShaderTextured, nullptr, 0);

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ﻿  Editor.cpp
   Game.cpp
   Globals.cpp
@@ -7,3 +8,7 @@
   main.cpp
   Gerando Código...
   TG.vcxproj -> C:\Users\mabes\source\repos\Projeto\x64\Debug\TG.exe
+=======
+﻿  Render.cpp
+  TG.vcxproj -> C:\Users\Paula\source\repos\Projeto1\x64\Debug\TG.exe
+>>>>>>> Branch-TG

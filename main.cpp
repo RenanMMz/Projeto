@@ -20,6 +20,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+	CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 	WNDCLASSEX wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WindowProc, 0L, 0L, GetModuleHandle(NULL), NULL, NULL, NULL, NULL, L"TorrouDX", NULL };
 	RegisterClassEx(&wc);
 	HWND hWnd = CreateWindow(L"TorrouDX", L"Torrou Engine - Bullet Hell Creator", WS_OVERLAPPEDWINDOW, 100, 100, 800, 600, NULL, NULL, wc.hInstance, NULL);
@@ -63,8 +64,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 					UpdateGameplay(); RenderGameplay();
 					DrawScore(g_hWnd, score); DrawBlocksRemaining(g_hWnd, blocksRemaining); DrawLives(g_hWnd, life); DrawStage(g_hWnd, stage);
 					break;
+				case GameState::STATE_EDITOR:
+					UpdateEditor(); RenderEditor();
+					break;
 				}
-				RenderImGuiDebugWindow(); swapChain->Present(0, 0); //swapchain em 0 = vsync desligado, em 1 = vsync ligado. A ideia é desligar o vsync e limitar o FPS manualmente em 60 para que a física seja constante em qualquer dispositivo e também para potencialmente reduzir o input delay gerado pelo vsync.
+				if (currentState == GameState::STATE_EDITOR) {
+					RenderEditorUI();
+				}
+				else {
+					RenderDebugUI();
+				}
+				swapChain->Present(0, 0); //swapchain em 0 = vsync desligado, em 1 = vsync ligado. A ideia é desligar o vsync e limitar o FPS manualmente em 60 para que a física seja constante em qualquer dispositivo e também para potencialmente reduzir o input delay gerado pelo vsync.
 
 			}
 			else {
@@ -77,5 +87,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	timeEndPeriod(1);
 	ImGui_ImplDX11_Shutdown(); ImGui_ImplWin32_Shutdown(); ImGui::DestroyContext();
 	CleanD3D(); UnregisterClass(L"TorrouDX", wc.hInstance);
+	CoUninitialize();
 	return 0;
 }

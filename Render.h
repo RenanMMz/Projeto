@@ -11,3 +11,6 @@ void DrawBlocksRemaining(HWND hwnd, int blocksRemaining);
 void RenderMenu();
 void RenderDiffSelect();
 void RenderGameplay();
+void RenderDebugUI();
+
+void DrawObstaclePreview(float centerX, float centerY);

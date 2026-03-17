@@ -1,0 +1,7 @@
+{
+  "bgR": 0, "bgG": 0, "bgB": 0, "bgA": 1,
+  "btnR": 0.0166523, "btnG": 0.485294, "btnB": 0.182055, "btnA": 1,
+  "selR": 0.79902, "selG": 0, "selB": 0, "selA": 1,
+  "bgTexture": "",
+  "titleTexture": ""
+}

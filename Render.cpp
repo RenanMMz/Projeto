@@ -99,6 +99,31 @@
 		wchar_t buffer[32]; swprintf(buffer, 32, L"Blocks Remaining: %d", blocksRemaining); TextOutW(hdc, 200, 10, buffer, (int)wcslen(buffer)); ReleaseDC(hwnd, hdc);
 	}
 
+	void DrawObstaclePreview(float centerX, float centerY)
+	{
+		deviceContext->VSSetShader(vertexShader, nullptr, 0);
+		deviceContext->PSSetShader(pixelShaderObstacle, nullptr, 0);
+		deviceContext->IASetInputLayout(inputLayout);
+
+		float halfW = editorObstacleConfig.width / 2.0f;
+		float halfH = editorObstacleConfig.height / 2.0f;
+
+		Vertex v[] = {
+			{ centerX - halfW, centerY + halfH, 0.0f },
+			{ centerX - halfW, centerY - halfH, 0.0f },
+			{ centerX + halfW, centerY - halfH, 0.0f },
+			{ centerX - halfW, centerY + halfH, 0.0f },
+			{ centerX + halfW, centerY - halfH, 0.0f },
+			{ centerX + halfW, centerY + halfH, 0.0f }
+		};
+
+		deviceContext->UpdateSubresource(blockVertexBuffer, 0, nullptr, v, 0, 0);
+		UINT stride = sizeof(Vertex);
+		UINT offset = 0;
+		deviceContext->IASetVertexBuffers(0, 1, &blockVertexBuffer, &stride, &offset);
+		deviceContext->Draw(6, 0);
+	}
+
 	void RenderMenu()
 	{
 		float clearColor[4] = { 0.05f, 0.05f, 0.1f, 1.0f }; deviceContext->ClearRenderTargetView(renderTargetView, clearColor);

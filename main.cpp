@@ -57,6 +57,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 			if (elapsedSeconds >= targetSecondsPerFrame) {
 				lastTime = currentTime;
 
+				// Toggle editor — E entra/sai em qualquer estado
+				static bool eWasPressed = false;
+				bool ePressed = (GetAsyncKeyState('E') & 0x8000) != 0;
+				if (ePressed && !eWasPressed) {
+					if (currentState == GameState::STATE_EDITOR)
+						currentState = GameState::STATE_START_MENU;
+					else
+						currentState = GameState::STATE_EDITOR;
+				}
+				eWasPressed = ePressed;
+
 				switch (currentState) {
 				case GameState::STATE_START_MENU: UpdateMenu(); RenderMenu(); break;
 				case GameState::STATE_DIFFICULTY_SELECT: UpdateDiffSelect(); RenderDiffSelect(); break;
@@ -74,7 +85,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 				else {
 					RenderDebugUI();
 				}
-				swapChain->Present(0, 0); //swapchain em 0 = vsync desligado, em 1 = vsync ligado. A ideia é desligar o vsync e limitar o FPS manualmente em 60 para que a física seja constante em qualquer dispositivo e também para potencialmente reduzir o input delay gerado pelo vsync.
+				swapChain->Present(0, 0);
 
 			}
 			else {

@@ -47,6 +47,7 @@ ID3D11ShaderResourceView* editorPlayerRunRightTexture = nullptr;
 ID3D11ShaderResourceView* editorPlayerRunLeftTexture = nullptr;
 ID3D11ShaderResourceView* editorProjectileTexture = nullptr;
 ID3D11InputLayout* inputLayoutTextured = nullptr;
+ID3D11BlendState* alphaBlendState = nullptr;
 
 GameState  currentState = STATE_START_MENU;
 EditorMode currentEditorMode = EDITOR_MODE_PLAYER;

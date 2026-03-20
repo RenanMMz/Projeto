@@ -612,6 +612,7 @@ bool LoadGameProject(const char* fullPath)
 	gameProject = {};
 	std::string line;
 	int stageIdx = 0;
+	bool inStagesArray = false;
 
 	while (std::getline(f, line)) {
 		auto readStr = [&](const char* key, char* dest) {
@@ -630,15 +631,23 @@ bool LoadGameProject(const char* fullPath)
 		if (line.find("\"stageCount\"") != std::string::npos)
 			sscanf_s(line.c_str(), " \"stageCount\": %d,", &gameProject.stageCount);
 
-		// Linhas de stage (dentro do array "stages")
-		if (line.find("\"") != std::string::npos &&
-			line.find(":") == std::string::npos &&
-			stageIdx < PROJECT_MAX_STAGES) {
-			size_t s = line.find("\"") + 1, e = line.rfind("\"");
-			if (s < e) {
-				std::string v = line.substr(s, e - s);
-				if (!v.empty() && v.find("{") == std::string::npos)
-					strcpy_s(gameProject.stagePaths[stageIdx++], MAX_PATH, v.c_str());
+		// Detecta inicio e fim do array "stages"
+		if (line.find("\"stages\"") != std::string::npos && line.find("[") != std::string::npos)
+			inStagesArray = true;
+		if (inStagesArray && line.find("]") != std::string::npos)
+			inStagesArray = false;
+
+		// Linhas de stage (dentro do array "stages") — paths com drive letter (C:\...)
+		if (inStagesArray && stageIdx < PROJECT_MAX_STAGES) {
+			size_t s = line.find("\"");
+			if (s != std::string::npos && line.find("stages") == std::string::npos) {
+				s += 1;
+				size_t e = line.rfind("\"");
+				if (s < e) {
+					std::string v = line.substr(s, e - s);
+					if (!v.empty())
+						strcpy_s(gameProject.stagePaths[stageIdx++], MAX_PATH, v.c_str());
+				}
 			}
 		}
 	}

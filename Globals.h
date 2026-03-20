@@ -394,6 +394,7 @@ extern ID3D11ShaderResourceView* editorPlayerRunRightTexture;
 extern ID3D11ShaderResourceView* editorPlayerRunLeftTexture;
 extern ID3D11ShaderResourceView* editorProjectileTexture;
 extern ID3D11InputLayout* inputLayoutTextured;
+extern ID3D11BlendState* alphaBlendState;
 
 extern double       g_targetFPS;
 extern double       g_maxFrameTime;

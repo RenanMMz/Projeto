@@ -133,6 +133,20 @@ bool InitD3D(HWND hWnd) {
 		vsForLayout->Release();
 	}
 
+	// Alpha blend state para texturas com transparencia
+	{
+		D3D11_BLEND_DESC bd = {};
+		bd.RenderTarget[0].BlendEnable = TRUE;
+		bd.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+		bd.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+		bd.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+		bd.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+		bd.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+		bd.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+		bd.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+		device->CreateBlendState(&bd, &alphaBlendState);
+	}
+
 	life = 3; return true;
 }
 
@@ -193,7 +207,13 @@ static void DrawTexturedQuad(ID3D11ShaderResourceView* srv,
 	deviceContext->PSSetShader(pixelShaderTextured, nullptr, 0);
 	deviceContext->PSSetShaderResources(0, 1, &srv);
 	deviceContext->PSSetSamplers(0, 1, &samplerState);
+
+	// Ativa alpha blending para transparencia de PNGs
+	float blendFactor[4] = { 0, 0, 0, 0 };
+	deviceContext->OMSetBlendState(alphaBlendState, blendFactor, 0xffffffff);
 	deviceContext->Draw(6, 0);
+	// Desativa blend state para nao afetar draws solidos
+	deviceContext->OMSetBlendState(nullptr, blendFactor, 0xffffffff);
 }
 
 // Fundo fullscreen

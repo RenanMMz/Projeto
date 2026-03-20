@@ -12,6 +12,7 @@
 #include <WICTextureLoader.h>
 #include <SpriteBatch.h>
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "D3DCompiler.lib")
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "user32.lib")
@@ -324,6 +325,22 @@ struct StageStartConfig {
 	float ballStartVelX, ballStartVelY;
 };
 
+
+// ==========================================
+// GAME PROJECT CONFIG
+// ==========================================
+
+#define PROJECT_MAX_STAGES 16
+
+struct GameProjectConfig {
+	char playerConfigPath[MAX_PATH];
+	char ballConfigPath[MAX_PATH];
+	char bombConfigPath[MAX_PATH];
+	char menuConfigPath[MAX_PATH];
+	int  stageCount;
+	char stagePaths[PROJECT_MAX_STAGES][MAX_PATH]; // paths para os JSONs de stage
+};
+
 // ==========================================
 // VARIAVEIS GLOBAIS (extern)
 // ==========================================
@@ -397,6 +414,7 @@ extern int   cfgLife;
 extern int   timer;
 extern int   bossHP;
 extern int   blocksRemaining;
+extern int   blocksInitialCount;  // total de blocos ao iniciar o stage
 extern int   timeCount;
 extern int   score;
 extern int   highScore;
@@ -452,6 +470,10 @@ extern StageStartConfig    editorStageConfig;
 extern StageEditorConfig   editorStageEditorConfig;
 
 extern std::vector<PlacedObject> stageObjects;
+// Projeto ativo
+extern GameProjectConfig gameProject;
+extern char              gameProjectPath[MAX_PATH]; // path do game_config.json aberto
+
 // Preview e demo do editor
 extern bool  editorDemoActive;      // toggle de demonstracao (inimigos, boss)
 extern float editorDemoBossHPPct;   // slider de HP simulado para o boss

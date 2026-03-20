@@ -5,10 +5,19 @@
 #include "Render.h"
 #include <windows.h>
 #include <commdlg.h>
+#include <shlobj.h>
 #include "Level.h"
 #include "./imgui/imgui.h"
 #include "./imgui/imgui_impl_win32.h"
 #include "./imgui/imgui_impl_dx11.h"
+
+// Forward declaration — RenderEditorProject definida no final do arquivo
+void RenderEditorProject();
+
+// Forward declarations de Level.cpp (evita depender da versao do Level.h no projeto)
+bool ExportStageTxt(const char* txtPath);
+bool SaveGameProject(const char* fullPath);
+bool LoadGameProject(const char* fullPath);
 
 // ==========================================
 // UTILITARIOS INTERNOS
@@ -24,8 +33,76 @@ static void LoadSRV(const char* path, ID3D11ShaderResourceView** srv)
 	CreateWICTextureFromFile(device, wpath.c_str(), nullptr, srv);
 }
 
+// ==========================================
+// CAMINHOS BASE — Documents\TorrouEngine
+// ==========================================
+
+static const char* GetEngineBasePath()
+{
+	static char basePath[MAX_PATH] = {};
+	if (basePath[0]) return basePath;
+	char docs[MAX_PATH] = {};
+	if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, 0, docs)))
+		sprintf_s(basePath, "%s\\TorrouEngine", docs);
+	else
+	{
+		char* userProfile = nullptr;
+		size_t len = 0;
+		_dupenv_s(&userProfile, &len, "USERPROFILE");
+		sprintf_s(basePath, "%s\\TorrouEngine", userProfile ? userProfile : ".");
+		free(userProfile);
+	}
+	CreateDirectoryA(basePath, NULL);
+	return basePath;
+}
+
+static const char* GetEngineAssetsPath()
+{
+	static char assetsPath[MAX_PATH] = {};
+	if (assetsPath[0]) return assetsPath;
+	sprintf_s(assetsPath, "%s\\Assets", GetEngineBasePath());
+	CreateDirectoryA(assetsPath, NULL);
+	return assetsPath;
+}
+
+// Monta o caminho absoluto de uma subpasta de objects
+// Ex: subdir="objects\\PLAYER" -> Documents\TorrouEngine\objects\PLAYER
+static void GetEngineObjectsPath(const char* subdir, char* outPath, int maxLen)
+{
+	char base[MAX_PATH];
+	sprintf_s(base, "%s\\objects", GetEngineBasePath());
+	CreateDirectoryA(base, NULL);
+	const char* sub = subdir ? strrchr(subdir, '\\') : nullptr;
+	sub = sub ? sub + 1 : subdir;
+	if (sub && sub[0]) {
+		sprintf_s(outPath, maxLen, "%s\\%s", base, sub);
+		CreateDirectoryA(outPath, NULL);
+	}
+	else {
+		strncpy_s(outPath, maxLen, base, maxLen - 1);
+	}
+}
+
+// Copia um asset para Documents\TorrouEngine\Assets\ e retorna o novo path.
+// Se o arquivo já estiver em Assets, apenas copia o path.
+static bool CopyAssetToEngine(const char* srcPath, char* destPath, int destLen)
+{
+	if (!srcPath || !srcPath[0]) return false;
+	const char* assetsDir = GetEngineAssetsPath();
+	if (_strnicmp(srcPath, assetsDir, strlen(assetsDir)) == 0) {
+		strncpy_s(destPath, destLen, srcPath, destLen - 1);
+		return true;
+	}
+	const char* fname = strrchr(srcPath, '\\');
+	if (!fname) fname = strrchr(srcPath, '/');
+	fname = fname ? fname + 1 : srcPath;
+	sprintf_s(destPath, destLen, "%s\\%s", assetsDir, fname);
+	return CopyFileA(srcPath, destPath, FALSE) != 0;
+}
+
 static bool OpenTextureFileDialogInternal(char* outPath, int maxLen)
 {
+	const char* assetsDir = GetEngineAssetsPath();
 	OPENFILENAMEA ofn = {};
 	char szFile[MAX_PATH] = {};
 	ofn.lStructSize = sizeof(ofn);
@@ -34,9 +111,14 @@ static bool OpenTextureFileDialogInternal(char* outPath, int maxLen)
 	ofn.nMaxFile = sizeof(szFile);
 	ofn.lpstrFilter = "Images (*.png;*.jpg;*.bmp)\0*.png;*.jpg;*.bmp\0All Files\0*.*\0";
 	ofn.nFilterIndex = 1;
+	ofn.lpstrInitialDir = assetsDir;
 	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 	if (GetOpenFileNameA(&ofn)) {
-		strncpy_s(outPath, maxLen, szFile, maxLen - 1); return true;
+		// Copia o arquivo para Assets e usa o path dentro de Assets
+		char dest[MAX_PATH] = {};
+		CopyAssetToEngine(szFile, dest, MAX_PATH);
+		strncpy_s(outPath, maxLen, dest[0] ? dest : szFile, maxLen - 1);
+		return true;
 	}
 	return false;
 }
@@ -45,14 +127,10 @@ bool OpenTextureFileDialog(char* outPath, int maxLen) {
 	return OpenTextureFileDialogInternal(outPath, maxLen);
 }
 
-static bool OpenJsonSaveDialog(char* outPath, int maxLen, const char* defaultDir)
+bool OpenJsonSaveDialog(char* outPath, int maxLen, const char* defaultDir)
 {
 	char absDir[MAX_PATH] = {};
-	if (defaultDir && defaultDir[0]) {
-		CreateDirectoryA("objects", NULL);
-		CreateDirectoryA(defaultDir, NULL);
-		GetFullPathNameA(defaultDir, MAX_PATH, absDir, nullptr);
-	}
+	GetEngineObjectsPath(defaultDir, absDir, MAX_PATH);
 	OPENFILENAMEA ofn = {};
 	char szFile[MAX_PATH] = {};
 	ofn.lStructSize = sizeof(ofn);
@@ -61,7 +139,7 @@ static bool OpenJsonSaveDialog(char* outPath, int maxLen, const char* defaultDir
 	ofn.nMaxFile = sizeof(szFile);
 	ofn.lpstrFilter = "JSON Files (*.json)\0*.json\0All Files\0*.*\0";
 	ofn.nFilterIndex = 1;
-	ofn.lpstrInitialDir = (absDir[0]) ? absDir : nullptr;
+	ofn.lpstrInitialDir = absDir;
 	ofn.lpstrDefExt = "json";
 	ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
 	if (GetSaveFileNameA(&ofn)) {
@@ -70,10 +148,10 @@ static bool OpenJsonSaveDialog(char* outPath, int maxLen, const char* defaultDir
 	return false;
 }
 
-static bool OpenJsonLoadDialog(char* outPath, int maxLen, const char* defaultDir)
+bool OpenJsonLoadDialog(char* outPath, int maxLen, const char* defaultDir)
 {
 	char absDir[MAX_PATH] = {};
-	if (defaultDir && defaultDir[0]) GetFullPathNameA(defaultDir, MAX_PATH, absDir, nullptr);
+	GetEngineObjectsPath(defaultDir, absDir, MAX_PATH);
 	OPENFILENAMEA ofn = {};
 	char szFile[MAX_PATH] = {};
 	ofn.lStructSize = sizeof(ofn);
@@ -82,7 +160,7 @@ static bool OpenJsonLoadDialog(char* outPath, int maxLen, const char* defaultDir
 	ofn.nMaxFile = sizeof(szFile);
 	ofn.lpstrFilter = "JSON Files (*.json)\0*.json\0All Files\0*.*\0";
 	ofn.nFilterIndex = 1;
-	ofn.lpstrInitialDir = (absDir[0]) ? absDir : nullptr;
+	ofn.lpstrInitialDir = absDir;
 	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 	if (GetOpenFileNameA(&ofn)) {
 		strncpy_s(outPath, maxLen, szFile, maxLen - 1); return true;
@@ -763,7 +841,17 @@ void RenderEditorStage()
 	{
 		char sp[MAX_PATH] = {}, lp[MAX_PATH] = {}; bool ds, dl;
 		if (JsonSaveLoadButtons("objects\\STAGE", sp, MAX_PATH, lp, MAX_PATH, &ds, &dl)) {
-			if (ds) SaveStageConfig(sp);
+			if (ds) {
+				SaveStageConfig(sp);
+				// Exporta stage.txt no mesmo diretório para o gameplay carregar
+				char txtPath[MAX_PATH];
+				strncpy_s(txtPath, sp, MAX_PATH - 1);
+				// Troca extensão .json por .txt
+				char* ext = strrchr(txtPath, '.');
+				if (ext) strcpy_s(ext, MAX_PATH - (ext - txtPath), ".txt");
+				else strncat_s(txtPath, MAX_PATH, ".txt", 4);
+				ExportStageTxt(txtPath);
+			}
 			if (dl) LoadStageConfig(lp);
 		}
 	}
@@ -1189,15 +1277,16 @@ void RenderEditorMenu()
 // RENDER DO EDITOR (tabs + viewport)
 // ==========================================
 
-void RenderEditorUI()
+void RenderEditorUI_NoNewFrame()
 {
-	ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
-
 	ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(ImVec2(380, 600));
 	ImGui::Begin("TorrouDX Editor", nullptr,
 		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
 	if (ImGui::BeginTabBar("EditorTabs")) {
+		if (ImGui::BeginTabItem("Projeto")) {
+			if (currentEditorMode != EDITOR_MODE_PLAYER)   editorDemoActive = false; RenderEditorProject();  ImGui::EndTabItem();
+		}
 		if (ImGui::BeginTabItem("Jogador")) {
 			if (currentEditorMode != EDITOR_MODE_PLAYER) {
 				currentEditorMode = EDITOR_MODE_PLAYER;   editorDemoActive = false;
@@ -1241,6 +1330,127 @@ void RenderEditorUI()
 		ImGui::EndTabBar();
 	}
 	ImGui::End();
-
 	ImGui::Render(); ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+}
+
+// Versão legada com NewFrame proprio (mantida por compatibilidade)
+void RenderEditorUI()
+{
+	ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
+	RenderEditorUI_NoNewFrame();
+}
+
+// ==========================================
+// PAINEL — PROJETO
+// ==========================================
+
+void RenderEditorProject()
+{
+	ImGui::Text("=== PROJETO DO JOGO ===");
+	ImGui::Separator();
+
+	ImGui::TextColored(ImVec4(0.7f, 0.9f, 0.7f, 1.f), "Arquivo: %s",
+		gameProjectPath[0] ? gameProjectPath : "(nenhum)");
+
+	if (ImGui::Button("Novo Projeto", ImVec2(-1, 0))) {
+		gameProject = {};
+		gameProjectPath[0] = '\0';
+	}
+
+	ImGui::Separator();
+	if (ImGui::CollapsingHeader("Configs Ativas", ImGuiTreeNodeFlags_DefaultOpen)) {
+
+		// Helper para selecionar arquivo e atualizar path do projeto
+		auto ProjectFileButton = [&](const char* label, char* path, const char* dir) {
+			ImGui::Text("%s:", label);
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s", path[0] ? path : "(nenhum)");
+			char btnId[64]; sprintf_s(btnId, "Selecionar##%s", label);
+			if (ImGui::Button(btnId, ImVec2(130, 0))) {
+				char tmp[MAX_PATH] = {};
+				if (OpenJsonLoadDialog(tmp, MAX_PATH, dir))
+					strncpy_s(path, MAX_PATH, tmp, MAX_PATH - 1);
+			}
+			ImGui::SameLine();
+			char clrId[64]; sprintf_s(clrId, "X##clr%s", label);
+			if (ImGui::SmallButton(clrId)) path[0] = '\0';
+			};
+
+		ProjectFileButton("Jogador", gameProject.playerConfigPath, "objects\\PLAYER");
+		ProjectFileButton("Bola", gameProject.ballConfigPath, "objects\\BALL");
+		ProjectFileButton("Bomba", gameProject.bombConfigPath, "objects\\BOMB");
+		ProjectFileButton("Menu", gameProject.menuConfigPath, "objects\\MENU");
+
+		ImGui::Separator();
+		ImGui::Text("Stages (ordem de progressão):");
+		ImGui::TextDisabled("O stage 0 é carregado ao iniciar; os demais avançam em sequência.");
+
+		for (int i = 0; i < gameProject.stageCount; i++) {
+			ImGui::PushID(i);
+			char stLabel[32]; sprintf_s(stLabel, "Stage %d", i);
+			ImGui::Text("%s:", stLabel);
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s", gameProject.stagePaths[i][0] ? gameProject.stagePaths[i] : "(vazio)");
+			if (ImGui::Button("Selecionar##st", ImVec2(100, 0))) {
+				char tmp[MAX_PATH] = {};
+				if (OpenJsonLoadDialog(tmp, MAX_PATH, "objects\\STAGE"))
+					strncpy_s(gameProject.stagePaths[i], MAX_PATH, tmp, MAX_PATH - 1);
+			}
+			ImGui::SameLine();
+			if (ImGui::SmallButton("X##strem") && gameProject.stageCount > 0) {
+				for (int j = i; j < gameProject.stageCount - 1; j++)
+					memcpy(gameProject.stagePaths[j], gameProject.stagePaths[j + 1], MAX_PATH);
+				gameProject.stagePaths[gameProject.stageCount - 1][0] = '\0';
+				gameProject.stageCount--;
+				ImGui::PopID(); break;
+			}
+			ImGui::PopID();
+		}
+		if (gameProject.stageCount < PROJECT_MAX_STAGES) {
+			if (ImGui::Button("+ Adicionar Stage", ImVec2(-1, 0))) {
+				char tmp[MAX_PATH] = {};
+				if (OpenJsonLoadDialog(tmp, MAX_PATH, "objects\\STAGE")) {
+					strncpy_s(gameProject.stagePaths[gameProject.stageCount], MAX_PATH, tmp, MAX_PATH - 1);
+					gameProject.stageCount++;
+				}
+			}
+		}
+	}
+
+	ImGui::Separator();
+
+	// Aplicar projeto ao jogo (recarrega tudo na memória)
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
+	if (ImGui::Button("Aplicar ao Jogo (recarregar configs)", ImVec2(-1, 0))) {
+		if (gameProject.playerConfigPath[0]) LoadPlayerConfig(gameProject.playerConfigPath);
+		if (gameProject.ballConfigPath[0])   LoadBallConfig(gameProject.ballConfigPath);
+		if (gameProject.bombConfigPath[0])   LoadBombConfig(gameProject.bombConfigPath);
+		if (gameProject.menuConfigPath[0])   LoadMenuConfig(gameProject.menuConfigPath);
+		if (gameProject.stageCount > 0 && gameProject.stagePaths[0][0])
+			LoadStageConfig(gameProject.stagePaths[0]);
+	}
+	ImGui::PopStyleColor();
+
+	ImGui::Separator();
+
+	// Save / Load do game_config.json
+	if (ImGui::Button("Salvar Projeto", ImVec2(130, 0))) {
+		char tmp[MAX_PATH] = {};
+		if (OpenJsonSaveDialog(tmp, MAX_PATH, "")) {
+			SaveGameProject(tmp);
+			ImGui::OpenPopup("OK_Proj");
+		}
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Carregar Projeto", ImVec2(130, 0))) {
+		char tmp[MAX_PATH] = {};
+		if (OpenJsonLoadDialog(tmp, MAX_PATH, "")) {
+			LoadGameProject(tmp);
+		}
+	}
+	if (ImGui::BeginPopupModal("OK_Proj", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+		ImGui::Text("Projeto salvo em:\n%s", gameProjectPath);
+		if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
 }

@@ -1,5 +1,11 @@
 #include "Level.h"
 
+// Forward declarations das funcoes de load do Editor (evita include circular)
+bool LoadPlayerConfig(const char* fullPath);
+bool LoadBallConfig(const char* fullPath);
+bool LoadBombConfig(const char* fullPath);
+bool LoadMenuConfig(const char* fullPath);
+
 void ClearLevel()
 {
 	blocks.clear();
@@ -8,12 +14,14 @@ void ClearLevel()
 	enemyBullets.clear();
 	droppedItems.clear();
 	blocksRemaining = 0;
+	blocksInitialCount = 0;
 }
 
 // Cria um bloco a partir de um BlockConfig carregado do editor
 void AddBlockFromConfig(float x, float y, const BlockConfig& cfg)
 {
 	blocksRemaining++;
+	blocksInitialCount++;
 	Block b = {};
 	b.x = x; b.y = y;
 	b.width = cfg.width;
@@ -47,6 +55,7 @@ void AddBlockFromConfig(float x, float y, const BlockConfig& cfg)
 void AddBlocks(float x, float y, float width, float height, int hits, int pattern, int count)
 {
 	blocksRemaining++;
+	blocksInitialCount++;
 	Block b = {};
 	b.x = x; b.y = y; b.width = width; b.height = height;
 	b.hits = hits; b.bulletPattern = pattern; b.bulletCount = count;
@@ -129,6 +138,7 @@ void LoadLevel(const char* filename)
 			if (!(ss >> dw3))      dw3 = 0.0f;
 
 			blocksRemaining++;
+			blocksInitialCount++;
 			Block b = {};
 			b.x = x; b.y = y; b.width = w; b.height = h;
 			b.hits = hits; b.active = true;
@@ -266,4 +276,199 @@ void InitStage(int stageSelected)
 	snprintf(filename, sizeof(filename), "stage%d.txt", stageSelected);
 	LoadLevel(filename);
 	stageTransitionTimer = 60;
+}
+
+// ==========================================
+// STAGE EXPORT — gera stageN.txt a partir de stageObjects
+// chamado automaticamente ao salvar um stage do editor
+// ==========================================
+
+bool ExportStageTxt(const char* txtPath)
+{
+	std::ofstream f(txtPath);
+	if (!f.is_open()) return false;
+
+	f << "P 0 1\n"; // padrao de bullet e balasPorBloco padrao
+
+	for (auto& o : stageObjects) {
+		if (o.type == PLACED_BLOCK) {
+			// Tenta carregar o BlockConfig do arquivo para pegar dimensoes/stats
+			BlockConfig cfg = {};
+			// defaults
+			cfg.width = editorBlockConfig.width;
+			cfg.height = editorBlockConfig.height;
+			cfg.maxHits = editorBlockConfig.maxHits;
+			cfg.bulletPattern = editorBlockConfig.bulletPattern;
+			cfg.bulletCount = editorBlockConfig.bulletCount;
+			cfg.bulletSpeed = editorBlockConfig.bulletSpeed;
+			cfg.shootIntervalFrames = editorBlockConfig.shootIntervalFrames;
+			cfg.invulnerable = editorBlockConfig.invulnerable;
+			cfg.movType = editorBlockConfig.movType;
+			cfg.movSpeed = editorBlockConfig.movSpeed;
+			cfg.movAmplitude = editorBlockConfig.movAmplitude;
+			cfg.movRadius = editorBlockConfig.movRadius;
+			cfg.dropTable = editorBlockConfig.dropTable;
+
+			// Se tem arquivo JSON proprio, le as dimensoes/stats dele
+			if (o.configFile[0] != '\0') {
+				std::ifstream jf(o.configFile);
+				if (jf.is_open()) {
+					std::string line;
+					while (std::getline(jf, line)) {
+						if (line.find("\"width\"") != std::string::npos) sscanf_s(line.c_str(), " \"width\": %f,", &cfg.width);
+						if (line.find("\"height\"") != std::string::npos) sscanf_s(line.c_str(), " \"height\": %f,", &cfg.height);
+						if (line.find("\"maxHits\"") != std::string::npos) sscanf_s(line.c_str(), " \"maxHits\": %d,", &cfg.maxHits);
+						if (line.find("\"bulletPattern\"") != std::string::npos) sscanf_s(line.c_str(), " \"bulletPattern\": %d,", &cfg.bulletPattern);
+						if (line.find("\"bulletCount\"") != std::string::npos) sscanf_s(line.c_str(), " \"bulletCount\": %d,", &cfg.bulletCount);
+						if (line.find("\"bulletSpeed\"") != std::string::npos) sscanf_s(line.c_str(), " \"bulletSpeed\": %f,", &cfg.bulletSpeed);
+						if (line.find("\"shootInterval\"") != std::string::npos) sscanf_s(line.c_str(), " \"shootInterval\": %d,", &cfg.shootIntervalFrames);
+						if (line.find("\"invulnerable\": true") != std::string::npos) cfg.invulnerable = true;
+						if (line.find("\"invulnerable\": false") != std::string::npos) cfg.invulnerable = false;
+						if (line.find("\"movType\"") != std::string::npos) {
+							int v; sscanf_s(line.c_str(), " \"movType\": %d,", &v); cfg.movType = (EnemyMovType)v;
+						}
+						if (line.find("\"movSpeed\"") != std::string::npos) sscanf_s(line.c_str(), " \"movSpeed\": %f,", &cfg.movSpeed);
+						if (line.find("\"movAmplitude\"") != std::string::npos) sscanf_s(line.c_str(), " \"movAmplitude\": %f,", &cfg.movAmplitude);
+						if (line.find("\"movRadius\"") != std::string::npos) sscanf_s(line.c_str(), " \"movRadius\": %f,", &cfg.movRadius);
+						if (line.find("\"hasDrop\": true") != std::string::npos) cfg.dropTable.hasDrop = true;
+						if (line.find("\"hasDrop\": false") != std::string::npos) cfg.dropTable.hasDrop = false;
+						for (int i = 0; i < 4; i++) {
+							char key[32]; sprintf_s(key, "\"dropEnabled%d\"", i);
+							if (line.find(key) != std::string::npos) {
+								cfg.dropTable.entryEnabled[i] = (line.find("true") != std::string::npos);
+							}
+							sprintf_s(key, "\"dropWeight%d\"", i);
+							if (line.find(key) != std::string::npos)
+								sscanf_s(line.c_str(), " \"%*[^\"]\": %f,", &cfg.dropTable.entryWeight[i]);
+						}
+					}
+					jf.close();
+				}
+			}
+
+			float dw0 = cfg.dropTable.entryEnabled[0] ? cfg.dropTable.entryWeight[0] : 0.0f;
+			float dw1 = cfg.dropTable.entryEnabled[1] ? cfg.dropTable.entryWeight[1] : 0.0f;
+			float dw2 = cfg.dropTable.entryEnabled[2] ? cfg.dropTable.entryWeight[2] : 0.0f;
+			float dw3 = cfg.dropTable.entryEnabled[3] ? cfg.dropTable.entryWeight[3] : 0.0f;
+
+			f << "B " << o.x << " " << o.y
+				<< " " << cfg.width << " " << cfg.height
+				<< " " << cfg.maxHits
+				<< " " << cfg.bulletPattern << " " << cfg.bulletCount
+				<< " " << cfg.bulletSpeed << " " << cfg.shootIntervalFrames
+				<< " " << (int)cfg.invulnerable
+				<< " " << (int)cfg.movType << " " << cfg.movSpeed
+				<< " " << cfg.movAmplitude << " " << cfg.movRadius
+				<< " " << (int)cfg.dropTable.hasDrop
+				<< " " << dw0 << " " << dw1 << " " << dw2 << " " << dw3
+				<< "\n";
+		}
+		else if (o.type == PLACED_OBSTACLE) {
+			float hw = editorObstacleConfig.width / 2.0f;
+			float hh = editorObstacleConfig.height / 2.0f;
+			// Tenta ler dimensoes do arquivo proprio
+			if (o.configFile[0] != '\0') {
+				std::ifstream jf(o.configFile);
+				if (jf.is_open()) {
+					std::string line;
+					while (std::getline(jf, line)) {
+						if (line.find("\"width\"") != std::string::npos) sscanf_s(line.c_str(), " \"width\": %f,", &hw);
+						if (line.find("\"height\"") != std::string::npos) sscanf_s(line.c_str(), " \"height\": %f,", &hh);
+					}
+					jf.close();
+					hw /= 2.0f; hh /= 2.0f;
+				}
+			}
+			f << "O " << o.x - hw << " " << o.y - hh
+				<< " " << hw * 2.0f << " " << hh * 2.0f << "\n";
+		}
+		// PLACED_BOSS e PLACED_BALLSPAWN nao geram linhas no .txt (tratados separadamente)
+	}
+	f.close();
+	return true;
+}
+
+// ==========================================
+// GAME PROJECT — Save / Load
+// ==========================================
+
+bool SaveGameProject(const char* fullPath)
+{
+	std::ofstream f(fullPath);
+	if (!f.is_open()) return false;
+	f << "{\n";
+	f << "  \"playerConfig\": \"" << gameProject.playerConfigPath << "\",\n";
+	f << "  \"ballConfig\": \"" << gameProject.ballConfigPath << "\",\n";
+	f << "  \"bombConfig\": \"" << gameProject.bombConfigPath << "\",\n";
+	f << "  \"menuConfig\": \"" << gameProject.menuConfigPath << "\",\n";
+	f << "  \"stageCount\": " << gameProject.stageCount << ",\n";
+	f << "  \"stages\": [\n";
+	for (int i = 0; i < gameProject.stageCount; i++) {
+		f << "    \"" << gameProject.stagePaths[i] << "\"";
+		if (i < gameProject.stageCount - 1) f << ",";
+		f << "\n";
+	}
+	f << "  ]\n}\n";
+	f.close();
+	strncpy_s(gameProjectPath, MAX_PATH, fullPath, MAX_PATH - 1);
+	return true;
+}
+
+bool LoadGameProject(const char* fullPath);  // forward decl
+
+// Carrega cada JSON referenciado e aplica as configs na memoria
+static void ApplyProjectConfigs()
+{
+	if (gameProject.playerConfigPath[0]) LoadPlayerConfig(gameProject.playerConfigPath);
+	if (gameProject.ballConfigPath[0])   LoadBallConfig(gameProject.ballConfigPath);
+	if (gameProject.bombConfigPath[0])   LoadBombConfig(gameProject.bombConfigPath);
+	if (gameProject.menuConfigPath[0])   LoadMenuConfig(gameProject.menuConfigPath);
+
+	// Stages: carrega o primeiro stage (stage 0) se existir
+	if (gameProject.stageCount > 0 && gameProject.stagePaths[0][0])
+		LoadStageJSON(gameProject.stagePaths[0]);
+}
+
+bool LoadGameProject(const char* fullPath)
+{
+	std::ifstream f(fullPath);
+	if (!f.is_open()) return false;
+
+	gameProject = {};
+	std::string line;
+	int stageIdx = 0;
+
+	while (std::getline(f, line)) {
+		auto readStr = [&](const char* key, char* dest) {
+			if (line.find(key) != std::string::npos) {
+				size_t s = line.find(": \"") + 3, e = line.rfind("\"");
+				if (s < e) {
+					std::string v = line.substr(s, e - s); strcpy_s(dest, MAX_PATH, v.c_str());
+				}
+			}
+			};
+		readStr("\"playerConfig\"", gameProject.playerConfigPath);
+		readStr("\"ballConfig\"", gameProject.ballConfigPath);
+		readStr("\"bombConfig\"", gameProject.bombConfigPath);
+		readStr("\"menuConfig\"", gameProject.menuConfigPath);
+
+		if (line.find("\"stageCount\"") != std::string::npos)
+			sscanf_s(line.c_str(), " \"stageCount\": %d,", &gameProject.stageCount);
+
+		// Linhas de stage (dentro do array "stages")
+		if (line.find("\"") != std::string::npos &&
+			line.find(":") == std::string::npos &&
+			stageIdx < PROJECT_MAX_STAGES) {
+			size_t s = line.find("\"") + 1, e = line.rfind("\"");
+			if (s < e) {
+				std::string v = line.substr(s, e - s);
+				if (!v.empty() && v.find("{") == std::string::npos)
+					strcpy_s(gameProject.stagePaths[stageIdx++], MAX_PATH, v.c_str());
+			}
+		}
+	}
+	f.close();
+	strncpy_s(gameProjectPath, MAX_PATH, fullPath, MAX_PATH - 1);
+	ApplyProjectConfigs();
+	return true;
 }

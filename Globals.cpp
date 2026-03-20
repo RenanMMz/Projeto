@@ -67,6 +67,7 @@ int  cfgLife = 3;
 int  timer = 0;
 int  bossHP = 0;
 int  blocksRemaining = 0;
+int  blocksInitialCount = 0;
 int  timeCount = 0;
 int  score = 0;
 int  highScore = 0;
@@ -186,6 +187,10 @@ StageEditorConfig editorStageEditorConfig = {
 
 // Objetos posicionados no stage editor
 std::vector<PlacedObject> stageObjects;
+// Projeto
+GameProjectConfig gameProject = {};
+char              gameProjectPath[MAX_PATH] = "game_config.json";
+
 
 // Preview e demo
 bool  editorDemoActive = false;

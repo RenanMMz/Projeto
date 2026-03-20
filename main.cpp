@@ -3,6 +3,7 @@
 #include "Game.h"
 #include "Render.h"
 #include "Editor.h"
+#include "Level.h"
 #include "timeapi.h"
 #pragma comment (lib, "winmm.lib")
 #include "./imgui/imgui.h"
@@ -32,6 +33,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	IMGUI_CHECKVERSION(); ImGui::CreateContext(); ImGuiIO& io = ImGui::GetIO(); (void)io; io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	ImGui::StyleColorsDark(); ImGui_ImplWin32_Init(g_hWnd); ImGui_ImplDX11_Init(device, deviceContext);
 
+	// Auto-load do projeto ao iniciar (falha silenciosamente se nao existir)
+	LoadGameProject(gameProjectPath);
+
 	//Controle de FPS
 	timeBeginPeriod(1);
 	LARGE_INTEGER frequency;
@@ -57,7 +61,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 			if (elapsedSeconds >= targetSecondsPerFrame) {
 				lastTime = currentTime;
 
-				// Toggle editor — E entra/sai em qualquer estado
+				// Toggle editor ï¿½ E entra/sai em qualquer estado
 				static bool eWasPressed = false;
 				bool ePressed = (GetAsyncKeyState('E') & 0x8000) != 0;
 				if (ePressed && !eWasPressed) {

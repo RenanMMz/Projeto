@@ -2,6 +2,7 @@
 #include "Math.h"
 #include "Level.h"
 #include "./imgui/imgui.h"
+#include <algorithm>
 
 // ==========================================
 // DROPS
@@ -120,7 +121,7 @@ void UpdateMenu()
     bool isZPressed = (GetAsyncKeyState('Z') & 0x8000);
     if (isZPressed && !g_wasZPressed) {
         if (selectedMenuIndex == 0) {
-            selectedMenuIndex = 1;
+            selectedMenuIndex = 0;
             currentState = GameState::STATE_DIFFICULTY_SELECT;
         }
         else if (selectedMenuIndex == 2) {
@@ -339,6 +340,44 @@ void UpdateEnemyBullet()
 }
 
 // ==========================================
+// DROPPED ITEMS — queda + coleta pelo jogador
+// ==========================================
+
+void UpdateDroppedItems()
+{
+    const float dropSpeed = 0.005f;
+    const float dropSize = 0.02f;
+
+    for (auto& d : droppedItems) {
+        if (!d.active) continue;
+        d.y -= dropSpeed; // cai para baixo
+
+        // Fora da tela
+        if (d.y < -1.1f) { d.active = false; continue; }
+
+        // Colisao com paddle
+        if (d.y - dropSize < paddleY + paddleHeight &&
+            d.y + dropSize > paddleY &&
+            d.x + dropSize > paddleX - paddleWidth / 2 &&
+            d.x - dropSize < paddleX + paddleWidth / 2)
+        {
+            d.active = false;
+            switch (d.type) {
+            case 0: life++; break;         // vida
+            case 1: break;                 // shield (placeholder)
+            case 2: break;                 // bomba  (placeholder)
+            case 3: score += 50; break;    // pontos
+            }
+        }
+    }
+
+    droppedItems.erase(
+        std::remove_if(droppedItems.begin(), droppedItems.end(),
+            [](const DroppedItem& d) { return !d.active; }),
+        droppedItems.end());
+}
+
+// ==========================================
 // BLOCOS — UPDATE (iFrame + destruicao + drops)
 // ==========================================
 
@@ -517,11 +556,24 @@ void UpdateGameplay()
 
     // Condição de vitória: só verifica se o stage tinha blocos para começar
     if (blocksRemaining <= 0 && blocksInitialCount > 0 && !modoEditor) {
-        char nextFilename[64];
-        snprintf(nextFilename, sizeof(nextFilename), "stage%d.txt", stage + 1);
-        std::ifstream nextFile(nextFilename);
-        if (nextFile.is_open()) {
-            nextFile.close(); stage++; InitStage(stage);
+        int nextStage = stage + 1;
+        // Verifica se existe proximo stage no projeto
+        bool hasNext = false;
+        if (nextStage < gameProject.stageCount && gameProject.stagePaths[nextStage][0]) {
+            hasNext = true;
+        } else {
+            // Fallback: tenta stage%d.txt no diretorio de trabalho
+            char nextFilename[64];
+            snprintf(nextFilename, sizeof(nextFilename), "stage%d.txt", nextStage);
+            std::ifstream nextFile(nextFilename);
+            if (nextFile.is_open()) {
+                nextFile.close();
+                hasNext = true;
+            }
+        }
+        if (hasNext) {
+            stage = nextStage;
+            InitStage(stage);
         }
         else {
             selectedMenuIndex = 0; currentState = GameState::STATE_START_MENU; return;
@@ -557,10 +609,11 @@ void UpdateGameplay()
     // Verifica captura de teclado pelo ImGui (seguro mesmo antes do NewFrame)
     ImGuiIO& io = ImGui::GetIO();
     bool imguiWantsKeys = io.WantCaptureKeyboard;
+    paddleMoveDir = 0;
     if (!imguiWantsKeys && !forceFieldActive && !dashActive) {
         float spd = (paddleEditMoveSpeed > 0.0f) ? paddleEditMoveSpeed : 0.01f;
-        if (GetAsyncKeyState(VK_LEFT) & 0x8000) paddleX -= spd;
-        if (GetAsyncKeyState(VK_RIGHT) & 0x8000) paddleX += spd;
+        if (GetAsyncKeyState(VK_LEFT) & 0x8000) { paddleX -= spd; paddleMoveDir = -1; }
+        if (GetAsyncKeyState(VK_RIGHT) & 0x8000) { paddleX += spd; paddleMoveDir = 1; }
     }
     if (paddleX - paddleWidth / 2 < -0.90f) paddleX = -0.90f + paddleWidth / 2;
     if (paddleX + paddleWidth / 2 > 0.90f) paddleX = 0.90f - paddleWidth / 2;
@@ -574,4 +627,5 @@ void UpdateGameplay()
     UpdateDash();
     UpdateIFrame();
     UpdateEnemyBullet();
+    UpdateDroppedItems();
 }

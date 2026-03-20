@@ -89,6 +89,7 @@ struct Block {
 	int   iFrameBlockTimer;
 	// Aparencia
 	bool  useTexture;
+	ID3D11ShaderResourceView* textureSRV;
 	float colorR, colorG, colorB, colorA;
 	// Movimentacao
 	EnemyMovType movType;
@@ -108,6 +109,7 @@ struct Obstacle {
 	float x, y, width, height;
 	bool  active;
 	bool  useTexture;
+	ID3D11ShaderResourceView* textureSRV;
 	float colorR, colorG, colorB, colorA;
 };
 
@@ -388,6 +390,9 @@ extern ID3D11ShaderResourceView* editorPlayerTexture;   // sprite idle do jogado
 extern ID3D11ShaderResourceView* editorBallTexture;     // sprite da bola
 extern ID3D11ShaderResourceView* editorBlockTexture;    // sprite do inimigo/bloco
 extern ID3D11ShaderResourceView* editorBossTexture;     // sprite do boss
+extern ID3D11ShaderResourceView* editorPlayerRunRightTexture;
+extern ID3D11ShaderResourceView* editorPlayerRunLeftTexture;
+extern ID3D11ShaderResourceView* editorProjectileTexture;
 extern ID3D11InputLayout* inputLayoutTextured;
 
 extern double       g_targetFPS;
@@ -434,6 +439,7 @@ extern float       paddleHeight;
 extern float       paddleHeightNormal;
 extern float       paddleHeightDash;
 extern bool        paddleVisible;
+extern int         paddleMoveDir; // -1 left, 0 idle, +1 right
 // Valores editáveis pelo editor (aplicados ao paddle em runtime)
 extern float       paddleEditWidth;
 extern float       paddleEditHeight;

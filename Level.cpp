@@ -1,8 +1,26 @@
 #include "Level.h"
+#include <map>
+#include <string>
 
 // Forward declarations das funcoes de load do Editor (evita include circular)
 bool LoadPlayerConfig(const char* fullPath);
 bool LoadBallConfig(const char* fullPath);
+
+// ==========================================
+// TEXTURE CACHE — evita recarregar a mesma textura
+// ==========================================
+static std::map<std::string, ID3D11ShaderResourceView*> s_textureCache;
+
+static ID3D11ShaderResourceView* CacheLoadTexture(const char* path) {
+	if (!path || !path[0]) return nullptr;
+	auto it = s_textureCache.find(path);
+	if (it != s_textureCache.end()) return it->second;
+	ID3D11ShaderResourceView* srv = nullptr;
+	std::wstring wpath(path, path + strlen(path));
+	CreateWICTextureFromFile(device, wpath.c_str(), nullptr, &srv);
+	s_textureCache[path] = srv;
+	return srv;
+}
 bool LoadBombConfig(const char* fullPath);
 bool LoadMenuConfig(const char* fullPath);
 
@@ -18,7 +36,7 @@ void ClearLevel()
 }
 
 // Cria um bloco a partir de um BlockConfig carregado do editor
-void AddBlockFromConfig(float x, float y, const BlockConfig& cfg)
+void AddBlockFromConfig(float x, float y, const BlockConfig& cfg, ID3D11ShaderResourceView* srv)
 {
 	blocksRemaining++;
 	blocksInitialCount++;
@@ -35,6 +53,7 @@ void AddBlockFromConfig(float x, float y, const BlockConfig& cfg)
 	b.shootTimer = 0;
 	b.invulnerable = cfg.invulnerable;
 	b.useTexture = cfg.useTexture;
+	b.textureSRV = srv;
 	b.colorR = cfg.colorR; b.colorG = cfg.colorG;
 	b.colorB = cfg.colorB; b.colorA = cfg.colorA;
 	b.movType = cfg.movType;
@@ -61,6 +80,7 @@ void AddBlocks(float x, float y, float width, float height, int hits, int patter
 	b.hits = hits; b.bulletPattern = pattern; b.bulletCount = count;
 	b.bulletSpeed = 0.007f; b.shootIntervalFrames = 0;
 	b.active = true; b.invulnerable = false;
+	b.textureSRV = nullptr;
 	b.colorR = 0.4f; b.colorG = 0.4f; b.colorB = 0.8f; b.colorA = 1.0f;
 	b.movType = MOV_NONE; b.movDir = 1.0f;
 	blocks.push_back(b);
@@ -71,6 +91,7 @@ void AddObstacles(float x, float y, float width, float height)
 	Obstacle o = {};
 	o.x = x; o.y = y; o.width = width; o.height = height;
 	o.active = true;
+	o.textureSRV = nullptr;
 	o.colorR = 1.0f; o.colorG = 1.0f; o.colorB = 0.0f; o.colorA = 1.0f;
 	obstacles.push_back(o);
 }
@@ -255,7 +276,126 @@ bool LoadStageJSON(const char* fullPath)
 		}
 	}
 	f.close();
+
+	// Carrega textura de fundo do stage se configurada
+	if (editorStageEditorConfig.useTextureBg && editorStageEditorConfig.bgTexturePath[0]) {
+		if (stageBgTexture) { stageBgTexture->Release(); stageBgTexture = nullptr; }
+		std::wstring wpath(editorStageEditorConfig.bgTexturePath,
+			editorStageEditorConfig.bgTexturePath + strlen(editorStageEditorConfig.bgTexturePath));
+		CreateWICTextureFromFile(device, wpath.c_str(), nullptr, &stageBgTexture);
+	}
+
 	return true;
+}
+
+// ==========================================
+// POPULATE GAMEPLAY FROM STAGE OBJECTS
+// Converte stageObjects (editor) em entidades de gameplay (blocks/obstacles)
+// Cada PlacedObject referencia um JSON de config que eh lido para obter stats.
+// ==========================================
+
+static bool LoadBlockConfigFromFile(const char* path, BlockConfig& cfg)
+{
+	std::ifstream jf(path);
+	if (!jf.is_open()) return false;
+	std::string line;
+	DropTable& dt = cfg.dropTable;
+	while (std::getline(jf, line)) {
+		if (line.find("\"width\"") != std::string::npos) sscanf_s(line.c_str(), " \"width\": %f,", &cfg.width);
+		if (line.find("\"height\"") != std::string::npos) sscanf_s(line.c_str(), " \"height\": %f,", &cfg.height);
+		if (line.find("\"maxHits\"") != std::string::npos) sscanf_s(line.c_str(), " \"maxHits\": %d,", &cfg.maxHits);
+		if (line.find("\"bulletPattern\"") != std::string::npos) sscanf_s(line.c_str(), " \"bulletPattern\": %d,", &cfg.bulletPattern);
+		if (line.find("\"bulletCount\"") != std::string::npos) sscanf_s(line.c_str(), " \"bulletCount\": %d,", &cfg.bulletCount);
+		if (line.find("\"bulletSpeed\"") != std::string::npos) sscanf_s(line.c_str(), " \"bulletSpeed\": %f,", &cfg.bulletSpeed);
+		if (line.find("\"shootInterval\"") != std::string::npos) sscanf_s(line.c_str(), " \"shootInterval\": %d,", &cfg.shootIntervalFrames);
+		if (line.find("\"invulnerable\": true") != std::string::npos) cfg.invulnerable = true;
+		if (line.find("\"invulnerable\": false") != std::string::npos) cfg.invulnerable = false;
+		if (line.find("\"useTexture\": true") != std::string::npos) cfg.useTexture = true;
+		if (line.find("\"useTexture\": false") != std::string::npos) cfg.useTexture = false;
+		if (line.find("\"colorR\"") != std::string::npos) sscanf_s(line.c_str(), " \"colorR\": %f,", &cfg.colorR);
+		if (line.find("\"colorG\"") != std::string::npos) sscanf_s(line.c_str(), " \"colorG\": %f,", &cfg.colorG);
+		if (line.find("\"colorB\"") != std::string::npos) sscanf_s(line.c_str(), " \"colorB\": %f,", &cfg.colorB);
+		if (line.find("\"colorA\"") != std::string::npos) sscanf_s(line.c_str(), " \"colorA\": %f,", &cfg.colorA);
+		if (line.find("\"texturePath\"") != std::string::npos) {
+			size_t s = line.find(": \"") + 3, e = line.rfind("\"");
+			if (s < e) { std::string v = line.substr(s, e - s); strcpy_s(cfg.texturePath, 256, v.c_str()); }
+		}
+		if (line.find("\"movType\"") != std::string::npos) {
+			int v; sscanf_s(line.c_str(), " \"movType\": %d,", &v); cfg.movType = (EnemyMovType)v;
+		}
+		if (line.find("\"movSpeed\"") != std::string::npos) sscanf_s(line.c_str(), " \"movSpeed\": %f,", &cfg.movSpeed);
+		if (line.find("\"movAmplitude\"") != std::string::npos) sscanf_s(line.c_str(), " \"movAmplitude\": %f,", &cfg.movAmplitude);
+		if (line.find("\"movRadius\"") != std::string::npos) sscanf_s(line.c_str(), " \"movRadius\": %f,", &cfg.movRadius);
+		if (line.find("\"hasDrop\": true") != std::string::npos) dt.hasDrop = true;
+		if (line.find("\"hasDrop\": false") != std::string::npos) dt.hasDrop = false;
+		for (int i = 0; i < 4; i++) {
+			char key[32]; sprintf_s(key, "\"dropEnabled%d\"", i);
+			if (line.find(key) != std::string::npos)
+				dt.entryEnabled[i] = (line.find("true") != std::string::npos);
+			sprintf_s(key, "\"dropWeight%d\"", i);
+			if (line.find(key) != std::string::npos)
+				sscanf_s(line.c_str(), " \"%*[^\"]\": %f,", &dt.entryWeight[i]);
+		}
+	}
+	jf.close();
+	return true;
+}
+
+static bool LoadObstacleDimsFromFile(const char* path, float& w, float& h,
+	float& cr, float& cg, float& cb, float& ca, bool& useTexture, char* texPath, int texPathLen)
+{
+	std::ifstream jf(path);
+	if (!jf.is_open()) return false;
+	std::string line;
+	while (std::getline(jf, line)) {
+		if (line.find("\"width\"") != std::string::npos) sscanf_s(line.c_str(), " \"width\": %f,", &w);
+		if (line.find("\"height\"") != std::string::npos) sscanf_s(line.c_str(), " \"height\": %f,", &h);
+		if (line.find("\"r\":") != std::string::npos)
+			sscanf_s(line.c_str(), " \"color\": { \"r\": %f , \"g\": %f , \"b\": %f , \"a\": %f }",
+				&cr, &cg, &cb, &ca);
+		if (line.find("\"useTexture\": true") != std::string::npos) useTexture = true;
+		if (line.find("\"useTexture\": false") != std::string::npos) useTexture = false;
+		if (line.find("\"texture\"") != std::string::npos) {
+			size_t s = line.find(": \"") + 3, e = line.rfind("\"");
+			if (s < e) { std::string v = line.substr(s, e - s); strcpy_s(texPath, texPathLen, v.c_str()); }
+		}
+	}
+	jf.close();
+	return true;
+}
+
+void PopulateGameplayFromStageObjects()
+{
+	ClearLevel();
+	for (auto& o : stageObjects) {
+		if (o.type == PLACED_BLOCK) {
+			BlockConfig cfg = editorBlockConfig; // usar defaults do editor como base
+			if (o.configFile[0] != '\0')
+				LoadBlockConfigFromFile(o.configFile, cfg);
+			ID3D11ShaderResourceView* srv = nullptr;
+			if (cfg.useTexture && cfg.texturePath[0])
+				srv = CacheLoadTexture(cfg.texturePath);
+			AddBlockFromConfig(o.x, o.y, cfg, srv);
+		}
+		else if (o.type == PLACED_OBSTACLE) {
+			float w = editorObstacleConfig.width;
+			float h = editorObstacleConfig.height;
+			float cr = 1.0f, cg = 1.0f, cb = 0.0f, ca = 1.0f;
+			bool useTexture = false;
+			char texPath[256] = {};
+			if (o.configFile[0] != '\0')
+				LoadObstacleDimsFromFile(o.configFile, w, h, cr, cg, cb, ca, useTexture, texPath, 256);
+			Obstacle obs = {};
+			obs.x = o.x; obs.y = o.y;
+			obs.width = w; obs.height = h;
+			obs.active = true;
+			obs.useTexture = useTexture;
+			obs.textureSRV = (useTexture && texPath[0]) ? CacheLoadTexture(texPath) : nullptr;
+			obs.colorR = cr; obs.colorG = cg; obs.colorB = cb; obs.colorA = ca;
+			obstacles.push_back(obs);
+		}
+		// PLACED_BOSS e PLACED_BALLSPAWN sao tratados separadamente
+	}
 }
 
 // ==========================================
@@ -267,6 +407,41 @@ void InitStage(int stageSelected)
 	paddleX = 0.0f;
 	paddleWidth = paddleEditWidth;
 	paddleHeight = paddleHeightNormal;
+
+	// Tenta carregar via projeto (stage JSON) primeiro
+	if (stageSelected < gameProject.stageCount && gameProject.stagePaths[stageSelected][0]) {
+		LoadStageJSON(gameProject.stagePaths[stageSelected]);
+		// Aplica posicao da bola do stage config
+		ballX = editorStageConfig.ballStartX;
+		ballY = editorStageConfig.ballStartY;
+		ballVelX = editorStageConfig.ballStartVelX;
+		ballVelY = editorStageConfig.ballStartVelY;
+		// Popula gameplay entities a partir dos stageObjects
+		PopulateGameplayFromStageObjects();
+		stageTransitionTimer = 60;
+		return;
+	}
+
+	// Fallback: tenta carregar .txt exportado do mesmo path com extensao diferente
+	if (stageSelected < gameProject.stageCount && gameProject.stagePaths[stageSelected][0]) {
+		char txtPath[MAX_PATH];
+		strncpy_s(txtPath, MAX_PATH, gameProject.stagePaths[stageSelected], MAX_PATH - 1);
+		char* ext = strrchr(txtPath, '.');
+		if (ext) strcpy_s(ext, MAX_PATH - (ext - txtPath), ".txt");
+		std::ifstream test(txtPath);
+		if (test.is_open()) {
+			test.close();
+			ballX = editorStageConfig.ballStartX;
+			ballY = editorStageConfig.ballStartY;
+			ballVelX = editorStageConfig.ballStartVelX;
+			ballVelY = editorStageConfig.ballStartVelY;
+			LoadLevel(txtPath);
+			stageTransitionTimer = 60;
+			return;
+		}
+	}
+
+	// Fallback final: stage%d.txt no diretorio de trabalho
 	ballX = editorStageConfig.ballStartX;
 	ballY = editorStageConfig.ballStartY;
 	ballVelX = editorStageConfig.ballStartVelX;
@@ -417,7 +592,7 @@ bool SaveGameProject(const char* fullPath)
 bool LoadGameProject(const char* fullPath);  // forward decl
 
 // Carrega cada JSON referenciado e aplica as configs na memoria
-static void ApplyProjectConfigs()
+void ApplyProjectConfigs()
 {
 	if (gameProject.playerConfigPath[0]) LoadPlayerConfig(gameProject.playerConfigPath);
 	if (gameProject.ballConfigPath[0])   LoadBallConfig(gameProject.ballConfigPath);

@@ -11,7 +11,7 @@
 #include "./imgui/imgui_impl_win32.h"
 #include "./imgui/imgui_impl_dx11.h"
 
-// Forward declaration — RenderEditorProject definida no final do arquivo
+// Forward declaration ï¿½ RenderEditorProject definida no final do arquivo
 void RenderEditorProject();
 
 // Forward declarations de Level.cpp (evita depender da versao do Level.h no projeto)
@@ -34,7 +34,7 @@ static void LoadSRV(const char* path, ID3D11ShaderResourceView** srv)
 }
 
 // ==========================================
-// CAMINHOS BASE — Documents\TorrouEngine
+// CAMINHOS BASE ï¿½ Documents\TorrouEngine
 // ==========================================
 
 static const char* GetEngineBasePath()
@@ -84,7 +84,7 @@ static void GetEngineObjectsPath(const char* subdir, char* outPath, int maxLen)
 }
 
 // Copia um asset para Documents\TorrouEngine\Assets\ e retorna o novo path.
-// Se o arquivo já estiver em Assets, apenas copia o path.
+// Se o arquivo jï¿½ estiver em Assets, apenas copia o path.
 static bool CopyAssetToEngine(const char* srcPath, char* destPath, int destLen)
 {
 	if (!srcPath || !srcPath[0]) return false;
@@ -230,30 +230,100 @@ static void DropTableEditor(DropTable& dt)
 // UPDATE DO EDITOR (input de mouse no viewport)
 // ==========================================
 
+// Drag state para objetos no stage editor
+static int   s_dragObjectIdx = -1;     // indice em stageObjects (-1 = nenhum, -2 = bola spawn)
+static bool  s_dragging = false;
+static float s_dragOffsetX = 0.0f;
+static float s_dragOffsetY = 0.0f;
+
+static void ScreenToNDC(POINT pt, float& ndcX, float& ndcY)
+{
+	ndcX = (pt.x / 400.0f) - 1.0f;
+	ndcY = -(pt.y / 300.0f) + 1.0f;
+}
+
 void UpdateEditor()
 {
 	if (!ImGui::GetIO().WantCaptureMouse) {
-		// Stage editor: arrastar posicao de spawn da bola
 		if (currentEditorMode == EDITOR_MODE_STAGE) {
-			if (GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
-				POINT pt; GetCursorPos(&pt); ScreenToClient(g_hWnd, &pt);
-				float ndcX = (pt.x / 400.0f) - 1.0f;
-				float ndcY = -(pt.y / 300.0f) + 1.0f;
-				editorStageConfig.ballStartX = ndcX;
-				editorStageConfig.ballStartY = ndcY;
-				ballX = ndcX; ballY = ndcY;
-				Vertex bv[] = {
-					{ballX - ballSize,ballY + ballSize,0},{ballX - ballSize,ballY - ballSize,0},{ballX + ballSize,ballY - ballSize,0},
-					{ballX - ballSize,ballY + ballSize,0},{ballX + ballSize,ballY - ballSize,0},{ballX + ballSize,ballY + ballSize,0}
-				};
-				deviceContext->UpdateSubresource(ballVertexBuffer, 0, nullptr, bv, 0, 0);
+			POINT pt; GetCursorPos(&pt); ScreenToClient(g_hWnd, &pt);
+			float ndcX, ndcY;
+			ScreenToNDC(pt, ndcX, ndcY);
+
+			bool lmbDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+
+			if (lmbDown && !s_dragging) {
+				// Inicio de drag â€” verifica se clicou em cima de algum objeto
+				s_dragObjectIdx = -1;
+				s_dragging = true;
+
+				// Verifica bola spawn primeiro
+				float bdx = ndcX - editorStageConfig.ballStartX;
+				float bdy = ndcY - editorStageConfig.ballStartY;
+				if (bdx * bdx + bdy * bdy < 0.01f) {
+					s_dragObjectIdx = -2; // bola spawn
+					s_dragOffsetX = bdx;
+					s_dragOffsetY = bdy;
+				}
+
+				// Verifica stageObjects (ultimo adicionado tem prioridade)
+				if (s_dragObjectIdx == -1) {
+					for (int i = (int)stageObjects.size() - 1; i >= 0; i--) {
+						auto& o = stageObjects[i];
+						float hw = 0.05f, hh = 0.03f; // tamanho default para click test
+						if (o.type == PLACED_BLOCK) {
+							hw = editorBlockConfig.width / 2.0f;
+							hh = editorBlockConfig.height / 2.0f;
+						}
+						else if (o.type == PLACED_OBSTACLE) {
+							hw = editorObstacleConfig.width / 2.0f;
+							hh = editorObstacleConfig.height / 2.0f;
+						}
+						else if (o.type == PLACED_BOSS) {
+							hw = (editorBossConfig.width > 0 ? editorBossConfig.width : 0.2f) / 2.0f;
+							hh = (editorBossConfig.height > 0 ? editorBossConfig.height : 0.2f) / 2.0f;
+						}
+						if (ndcX >= o.x - hw && ndcX <= o.x + hw &&
+							ndcY >= o.y - hh && ndcY <= o.y + hh) {
+							s_dragObjectIdx = i;
+							s_dragOffsetX = ndcX - o.x;
+							s_dragOffsetY = ndcY - o.y;
+							break;
+						}
+					}
+				}
 			}
+			else if (lmbDown && s_dragging) {
+				// Continuacao do drag â€” move o objeto
+				if (s_dragObjectIdx == -2) {
+					editorStageConfig.ballStartX = ndcX - s_dragOffsetX;
+					editorStageConfig.ballStartY = ndcY - s_dragOffsetY;
+					ballX = editorStageConfig.ballStartX;
+					ballY = editorStageConfig.ballStartY;
+				}
+				else if (s_dragObjectIdx >= 0 && s_dragObjectIdx < (int)stageObjects.size()) {
+					stageObjects[s_dragObjectIdx].x = ndcX - s_dragOffsetX;
+					stageObjects[s_dragObjectIdx].y = ndcY - s_dragOffsetY;
+				}
+			}
+			else if (!lmbDown) {
+				// Fim do drag
+				s_dragging = false;
+				s_dragObjectIdx = -1;
+			}
+		}
+	}
+	else {
+		// ImGui capturou o mouse â€” cancelar drag
+		if (s_dragging) {
+			s_dragging = false;
+			s_dragObjectIdx = -1;
 		}
 	}
 }
 
 // ==========================================
-// SAVE / LOAD — PLAYER
+// SAVE / LOAD ï¿½ PLAYER
 // ==========================================
 
 bool SavePlayerConfig(const char* fullPath)
@@ -323,11 +393,14 @@ bool LoadPlayerConfig(const char* fullPath)
 	paddleWidth = paddleEditWidth;
 	paddleHeight = paddleHeightNormal;
 	LoadSRV(editorPlayerConfig.texturePath, &editorPlayerTexture);
+	LoadSRV(editorPlayerConfig.runRightTexturePath, &editorPlayerRunRightTexture);
+	LoadSRV(editorPlayerConfig.runLeftTexturePath, &editorPlayerRunLeftTexture);
+	LoadSRV(editorPlayerConfig.projectileTexturePath, &editorProjectileTexture);
 	return true;
 }
 
 // ==========================================
-// SAVE / LOAD — BALL
+// SAVE / LOAD ï¿½ BALL
 // ==========================================
 
 bool SaveBallConfig(const char* fullPath)
@@ -360,7 +433,7 @@ bool LoadBallConfig(const char* fullPath)
 }
 
 // ==========================================
-// SAVE / LOAD — STAGE
+// SAVE / LOAD ï¿½ STAGE
 // ==========================================
 
 bool SaveStageConfig(const char* fullPath) {
@@ -371,7 +444,7 @@ bool LoadStageConfig(const char* fullPath) {
 }
 
 // ==========================================
-// SAVE / LOAD — OBSTACLE
+// SAVE / LOAD ï¿½ OBSTACLE
 // ==========================================
 
 bool SaveObstacleConfig(const char* fullPath)
@@ -412,7 +485,7 @@ bool LoadObstacleConfig(const char* fullPath)
 }
 
 // ==========================================
-// SAVE / LOAD — BLOCK (ENEMY)
+// SAVE / LOAD ï¿½ BLOCK (ENEMY)
 // ==========================================
 
 bool SaveBlockConfig(const char* fullPath)
@@ -496,7 +569,7 @@ bool LoadBlockConfig(const char* fullPath)
 }
 
 // ==========================================
-// SAVE / LOAD — BOSS (estrutura simplificada — editor completo na proxima iteracao)
+// SAVE / LOAD ï¿½ BOSS (estrutura simplificada ï¿½ editor completo na proxima iteracao)
 // ==========================================
 
 bool SaveBossConfig(const char* fullPath)
@@ -546,7 +619,7 @@ bool LoadBossConfig(const char* fullPath)
 }
 
 // ==========================================
-// SAVE / LOAD — BOMB
+// SAVE / LOAD ï¿½ BOMB
 // ==========================================
 
 bool SaveBombConfig(const char* fullPath)
@@ -586,7 +659,7 @@ bool LoadBombConfig(const char* fullPath)
 }
 
 // ==========================================
-// SAVE / LOAD — MENU
+// SAVE / LOAD ï¿½ MENU
 // ==========================================
 
 bool SaveMenuConfig(const char* fullPath)
@@ -638,7 +711,7 @@ bool LoadMenuConfig(const char* fullPath)
 }
 
 // ==========================================
-// PAINEL — JOGADOR
+// PAINEL ï¿½ JOGADOR
 // ==========================================
 
 static void BulletPatternCombo(const char* label, int& pattern)
@@ -670,7 +743,7 @@ void RenderEditorPlayer()
 			LoadSRV(editorPlayerConfig.runRightTexturePath, &editorPlayerTexture);
 		if (TextureButton("Correndo Esquerda", editorPlayerConfig.runLeftTexturePath, 256, "spr_run_l"))
 			LoadSRV(editorPlayerConfig.runLeftTexturePath, &editorPlayerTexture);
-		TextureButton("Projétil", editorPlayerConfig.projectileTexturePath, 256, "spr_proj");
+		TextureButton("Projï¿½til", editorPlayerConfig.projectileTexturePath, 256, "spr_proj");
 		TextureButton("Escudo", editorPlayerConfig.shieldTexturePath, 256, "spr_shield");
 		TextureButton("Dash Direita", editorPlayerConfig.dashRightTexturePath, 256, "spr_dash_r");
 		TextureButton("Dash Esquerda", editorPlayerConfig.dashLeftTexturePath, 256, "spr_dash_l");
@@ -685,7 +758,7 @@ void RenderEditorPlayer()
 			if (ImGui::RadioButton(fxNames[i], fxType == i)) fxType = i;
 		}
 		fx.type = (DamageEffectType)fxType;
-		ImGui::SliderInt("Duração (frames)", &fx.durationFrames, 30, 300);
+		ImGui::SliderInt("Duraï¿½ï¿½o (frames)", &fx.durationFrames, 30, 300);
 
 		if (fx.type == DMG_BLINK) {
 			ImGui::SliderInt("Intervalo piscar (frames)", &fx.blinkIntervalFrames, 1, 20);
@@ -709,7 +782,7 @@ void RenderEditorPlayer()
 }
 
 // ==========================================
-// PAINEL — BOLA
+// PAINEL ï¿½ BOLA
 // ==========================================
 
 void RenderEditorBall()
@@ -733,7 +806,7 @@ void RenderEditorBall()
 }
 
 // ==========================================
-// PAINEL — STAGE EDITOR
+// PAINEL ï¿½ STAGE EDITOR
 // ==========================================
 
 void RenderEditorStage()
@@ -751,7 +824,7 @@ void RenderEditorStage()
 
 	// Background
 	if (ImGui::CollapsingHeader("Background")) {
-		ImGui::RadioButton("Cor sólida##bg", (int*)&editorStageEditorConfig.useTextureBg, 0);
+		ImGui::RadioButton("Cor sï¿½lida##bg", (int*)&editorStageEditorConfig.useTextureBg, 0);
 		ImGui::SameLine();
 		ImGui::RadioButton("Textura##bg", (int*)&editorStageEditorConfig.useTextureBg, 1);
 		if (!editorStageEditorConfig.useTextureBg) {
@@ -793,7 +866,7 @@ void RenderEditorStage()
 			}
 		}
 		ImGui::SameLine();
-		if (ImGui::Button("+ Obstáculo (JSON)")) {
+		if (ImGui::Button("+ Obstï¿½culo (JSON)")) {
 			char p[MAX_PATH] = {};
 			if (OpenJsonLoadDialog(p, MAX_PATH, "objects\\OBSTACLE")) {
 				PlacedObject po = {}; po.type = PLACED_OBSTACLE; po.x = 0.0f; po.y = 0.0f;
@@ -843,10 +916,10 @@ void RenderEditorStage()
 		if (JsonSaveLoadButtons("objects\\STAGE", sp, MAX_PATH, lp, MAX_PATH, &ds, &dl)) {
 			if (ds) {
 				SaveStageConfig(sp);
-				// Exporta stage.txt no mesmo diretório para o gameplay carregar
+				// Exporta stage.txt no mesmo diretï¿½rio para o gameplay carregar
 				char txtPath[MAX_PATH];
 				strncpy_s(txtPath, sp, MAX_PATH - 1);
-				// Troca extensão .json por .txt
+				// Troca extensï¿½o .json por .txt
 				char* ext = strrchr(txtPath, '.');
 				if (ext) strcpy_s(ext, MAX_PATH - (ext - txtPath), ".txt");
 				else strncat_s(txtPath, MAX_PATH, ".txt", 4);
@@ -858,7 +931,7 @@ void RenderEditorStage()
 }
 
 // ==========================================
-// PAINEL — OBSTÁCULOS
+// PAINEL ï¿½ OBSTï¿½CULOS
 // ==========================================
 
 void RenderEditorObstacle()
@@ -874,7 +947,7 @@ void RenderEditorObstacle()
 	}
 
 	if (ImGui::CollapsingHeader("Aparencia", ImGuiTreeNodeFlags_DefaultOpen)) {
-		ImGui::RadioButton("Cor sólida##obs_app", (int*)&editorObstacleConfig.useTexture, 0);
+		ImGui::RadioButton("Cor sï¿½lida##obs_app", (int*)&editorObstacleConfig.useTexture, 0);
 		ImGui::SameLine();
 		ImGui::RadioButton("Sprite##obs_app", (int*)&editorObstacleConfig.useTexture, 1);
 		if (!editorObstacleConfig.useTexture) {
@@ -906,7 +979,7 @@ void RenderEditorObstacle()
 }
 
 // ==========================================
-// PAINEL — INIMIGOS (BLOCOS)
+// PAINEL ï¿½ INIMIGOS (BLOCOS)
 // ==========================================
 
 void RenderEditorEnemy()
@@ -935,7 +1008,7 @@ void RenderEditorEnemy()
 	}
 
 	if (ImGui::CollapsingHeader("Aparencia", ImGuiTreeNodeFlags_DefaultOpen)) {
-		ImGui::RadioButton("Cor sólida##blk_app", (int*)&editorBlockConfig.useTexture, 0);
+		ImGui::RadioButton("Cor sï¿½lida##blk_app", (int*)&editorBlockConfig.useTexture, 0);
 		ImGui::SameLine();
 		ImGui::RadioButton("Sprite##blk_app", (int*)&editorBlockConfig.useTexture, 1);
 		if (!editorBlockConfig.useTexture) {
@@ -949,15 +1022,15 @@ void RenderEditorEnemy()
 
 	if (ImGui::CollapsingHeader("Propriedades", ImGuiTreeNodeFlags_DefaultOpen)) {
 		ImGui::SliderInt("Max Hits##blk", &editorBlockConfig.maxHits, 1, 20);
-		ImGui::Checkbox("Invulnerável (turret)", &editorBlockConfig.invulnerable);
+		ImGui::Checkbox("Invulnerï¿½vel (turret)", &editorBlockConfig.invulnerable);
 		if (editorBlockConfig.invulnerable)
-			ImGui::TextDisabled("Bola passa sem dano. So projéteis inimigos atiram.");
+			ImGui::TextDisabled("Bola passa sem dano. So projï¿½teis inimigos atiram.");
 	}
 
-	if (ImGui::CollapsingHeader("Padrão de Tiro")) {
-		BulletPatternCombo("Padrão##blk", editorBlockConfig.bulletPattern);
-		ImGui::SliderInt("Qtd. Projéteis##blk", &editorBlockConfig.bulletCount, 1, 20);
-		ImGui::SliderFloat("Velocidade Projétil##blk", &editorBlockConfig.bulletSpeed, 0.001f, 0.03f, "%.4f");
+	if (ImGui::CollapsingHeader("Padrï¿½o de Tiro")) {
+		BulletPatternCombo("Padrï¿½o##blk", editorBlockConfig.bulletPattern);
+		ImGui::SliderInt("Qtd. Projï¿½teis##blk", &editorBlockConfig.bulletCount, 1, 20);
+		ImGui::SliderFloat("Velocidade Projï¿½til##blk", &editorBlockConfig.bulletSpeed, 0.001f, 0.03f, "%.4f");
 		ImGui::SliderInt("Intervalo de Tiro (frames)", &editorBlockConfig.shootIntervalFrames, 0, 300);
 		ImGui::TextDisabled("0 = somente atira ao ser atingido");
 	}
@@ -995,7 +1068,7 @@ void RenderEditorEnemy()
 }
 
 // ==========================================
-// PAINEL — BOSS
+// PAINEL ï¿½ BOSS
 // ==========================================
 
 static void BossActionEditor(BossAction& a, int idx)
@@ -1003,7 +1076,7 @@ static void BossActionEditor(BossAction& a, int idx)
 	ImGui::PushID(idx);
 	const char* actNames[] = {
 		"Mover ate ponto", "Teleportar", "Atirar (tempo)",
-		"Atirar (pontos fixos)", "Avançar no jogador",
+		"Atirar (pontos fixos)", "Avanï¿½ar no jogador",
 		"Esperar", "Spawnar minion", "Trocar sprite", "Invulneravel"
 	};
 	int t = (int)a.type;
@@ -1050,7 +1123,7 @@ static void BossActionEditor(BossAction& a, int idx)
 		break;
 	case BOSS_ACT_INVINCIBLE:
 		ImGui::Checkbox("Ativar invulnerabilidade##actinv", &a.invincibleOn);
-		ImGui::SliderFloat("Duração (s)##actinv", &a.duration, 0.1f, 10.0f);
+		ImGui::SliderFloat("Duraï¿½ï¿½o (s)##actinv", &a.duration, 0.1f, 10.0f);
 		break;
 	default: break;
 	}
@@ -1112,7 +1185,7 @@ void RenderEditorBoss()
 	ImGui::InputText("Nome##boss", editorBossConfig.name, sizeof(editorBossConfig.name));
 	if (TextureButton("Sprite", editorBossConfig.texturePath, 256, "spr_boss"))
 		LoadSRV(editorBossConfig.texturePath, &editorBossTexture);
-	ImGui::SliderInt("HP Máximo", &editorBossConfig.maxHP, 10, 5000);
+	ImGui::SliderInt("HP Mï¿½ximo", &editorBossConfig.maxHP, 10, 5000);
 	ImGui::SliderFloat("Largura##bss", &editorBossConfig.width, 0.05f, 0.8f);
 	ImGui::SliderFloat("Altura##bss", &editorBossConfig.height, 0.05f, 0.8f);
 
@@ -1122,9 +1195,9 @@ void RenderEditorBoss()
 	ImGui::DragFloat("Start Y##bss", &editorBossConfig.startY, 0.01f, -1.0f, 1.0f);
 
 	// Arquetipo
-	const char* archNames[] = { "Scripted", "Estático", "Estático + Familiares", "Multi-Part" };
+	const char* archNames[] = { "Scripted", "Estï¿½tico", "Estï¿½tico + Familiares", "Multi-Part" };
 	int arch = (int)editorBossConfig.archetype;
-	ImGui::Combo("Arquétipo", &arch, archNames, IM_ARRAYSIZE(archNames));
+	ImGui::Combo("Arquï¿½tipo", &arch, archNames, IM_ARRAYSIZE(archNames));
 	editorBossConfig.archetype = (BossArchetype)arch;
 
 	// Fases de HP com scripts
@@ -1153,7 +1226,7 @@ void RenderEditorBoss()
 					ImGui::DragFloat("Offset Y##fam", &fam.relOffsetY, 0.01f, -1.0f, 1.0f);
 					ImGui::SliderFloat("Raio Orbita##fam", &fam.orbitRadius, 0.0f, 0.8f);
 					ImGui::SliderFloat("Vel. Orbita (graus/s)##fam", &fam.orbitSpeed, 0.0f, 360.0f);
-					BulletPatternCombo("Padrão##fam", fam.bulletPattern);
+					BulletPatternCombo("Padrï¿½o##fam", fam.bulletPattern);
 					ImGui::SliderInt("Qtd.##fam", &fam.bulletCount, 1, 16);
 					ImGui::SliderFloat("Vel.##fam_bs", &fam.bulletSpeed, 0.001f, 0.03f);
 					ImGui::SliderFloat("Intervalo Tiro (s)##fam", &fam.shootIntervalSec, 0.1f, 10.0f);
@@ -1197,7 +1270,7 @@ void RenderEditorBoss()
 }
 
 // ==========================================
-// PAINEL — BOMBA
+// PAINEL ï¿½ BOMBA
 // ==========================================
 
 void RenderEditorBomb()
@@ -1225,7 +1298,7 @@ void RenderEditorBomb()
 }
 
 // ==========================================
-// PAINEL — MENU
+// PAINEL ï¿½ MENU
 // ==========================================
 
 void RenderEditorMenu()
@@ -1277,9 +1350,28 @@ void RenderEditorMenu()
 // RENDER DO EDITOR (tabs + viewport)
 // ==========================================
 
+static bool s_editorPanelCollapsed = false;
+
 void RenderEditorUI_NoNewFrame()
 {
-	ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(ImVec2(380, 600));
+	// Quando no Stage tab, permitir colapsar o painel para dar mais espaco
+	if (s_editorPanelCollapsed && currentEditorMode == EDITOR_MODE_STAGE) {
+		// Painel fino com botao de expandir
+		ImGui::SetNextWindowPos(ImVec2(0, 0));
+		ImGui::SetNextWindowSize(ImVec2(32, 600));
+		ImGui::Begin("##collapsed", nullptr,
+			ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+			ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+			ImGuiWindowFlags_NoScrollbar);
+		if (ImGui::Button(">", ImVec2(20, 40)))
+			s_editorPanelCollapsed = false;
+		ImGui::End();
+		ImGui::Render(); ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+		return;
+	}
+
+	float panelW = (currentEditorMode == EDITOR_MODE_STAGE) ? 300.0f : 380.0f;
+	ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(ImVec2(panelW, 600));
 	ImGui::Begin("TorrouDX Editor", nullptr,
 		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
@@ -1300,7 +1392,13 @@ void RenderEditorUI_NoNewFrame()
 		if (ImGui::BeginTabItem("Stage")) {
 			if (currentEditorMode != EDITOR_MODE_STAGE) {
 				currentEditorMode = EDITOR_MODE_STAGE;    editorDemoActive = false;
-			} RenderEditorStage();    ImGui::EndTabItem();
+			}
+			// Botao para colapsar o painel e ver o stage inteiro
+			if (ImGui::Button("< Esconder Painel"))
+				s_editorPanelCollapsed = true;
+			ImGui::SameLine();
+			ImGui::TextDisabled("(colapse para ver o stage completo)");
+			RenderEditorStage();    ImGui::EndTabItem();
 		}
 		if (ImGui::BeginTabItem("Obstaculo")) {
 			if (currentEditorMode != EDITOR_MODE_OBSTACLE) {
@@ -1333,7 +1431,7 @@ void RenderEditorUI_NoNewFrame()
 	ImGui::Render(); ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }
 
-// Versão legada com NewFrame proprio (mantida por compatibilidade)
+// Versï¿½o legada com NewFrame proprio (mantida por compatibilidade)
 void RenderEditorUI()
 {
 	ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
@@ -1341,7 +1439,7 @@ void RenderEditorUI()
 }
 
 // ==========================================
-// PAINEL — PROJETO
+// PAINEL ï¿½ PROJETO
 // ==========================================
 
 void RenderEditorProject()
@@ -1382,8 +1480,8 @@ void RenderEditorProject()
 		ProjectFileButton("Menu", gameProject.menuConfigPath, "objects\\MENU");
 
 		ImGui::Separator();
-		ImGui::Text("Stages (ordem de progressão):");
-		ImGui::TextDisabled("O stage 0 é carregado ao iniciar; os demais avançam em sequência.");
+		ImGui::Text("Stages (ordem de progressï¿½o):");
+		ImGui::TextDisabled("O stage 0 ï¿½ carregado ao iniciar; os demais avanï¿½am em sequï¿½ncia.");
 
 		for (int i = 0; i < gameProject.stageCount; i++) {
 			ImGui::PushID(i);
@@ -1419,7 +1517,7 @@ void RenderEditorProject()
 
 	ImGui::Separator();
 
-	// Aplicar projeto ao jogo (recarrega tudo na memória)
+	// Aplicar projeto ao jogo (recarrega tudo na memï¿½ria)
 	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
 	if (ImGui::Button("Aplicar ao Jogo (recarregar configs)", ImVec2(-1, 0))) {
 		if (gameProject.playerConfigPath[0]) LoadPlayerConfig(gameProject.playerConfigPath);

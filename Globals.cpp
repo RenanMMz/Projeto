@@ -43,6 +43,9 @@ ID3D11ShaderResourceView* editorPlayerTexture = nullptr;
 ID3D11ShaderResourceView* editorBallTexture = nullptr;
 ID3D11ShaderResourceView* editorBlockTexture = nullptr;
 ID3D11ShaderResourceView* editorBossTexture = nullptr;
+ID3D11ShaderResourceView* editorPlayerRunRightTexture = nullptr;
+ID3D11ShaderResourceView* editorPlayerRunLeftTexture = nullptr;
+ID3D11ShaderResourceView* editorProjectileTexture = nullptr;
 ID3D11InputLayout* inputLayoutTextured = nullptr;
 
 GameState  currentState = STATE_START_MENU;
@@ -90,6 +93,7 @@ float       paddleHeight = 0.20f;
 float       paddleHeightNormal = 0.20f;
 float       paddleHeightDash = 0.08f;
 bool        paddleVisible = true;
+int         paddleMoveDir = 0;
 float       paddleEditWidth = 0.08f;
 float       paddleEditHeight = 0.20f;
 float       paddleEditMoveSpeed = 0.01f;
@@ -118,7 +122,7 @@ std::vector<EnemyBullet> enemyBullets;
 std::vector<DroppedItem> droppedItems;
 
 // ==========================================
-// CONFIGS DO EDITOR — defaults
+// CONFIGS DO EDITOR ï¿½ defaults
 // ==========================================
 
 ObstacleConfig editorObstacleConfig = {
@@ -132,7 +136,7 @@ char editorObstacleWidthInput[32] = "0.3";
 char editorObstacleHeightInput[32] = "0.02";
 char editorObstacleTexturePathInput[256] = "";
 
-// Boss — inicializado com zeros; campos preenchidos no editor
+// Boss ï¿½ inicializado com zeros; campos preenchidos no editor
 BossConfig editorBossConfig = {};
 
 // Block/Enemy template

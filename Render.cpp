@@ -296,59 +296,180 @@ void RenderDiffSelect() {
 }
 
 void RenderGameplay() {
-	float clearColor[4] = { 0.2f, 0.2f, 0.6f, 1.0f }; deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
+	// Cor de fundo do stage (usa config do editor se disponivel)
+	float clearColor[4] = {
+		editorStageEditorConfig.bgColorR, editorStageEditorConfig.bgColorG,
+		editorStageEditorConfig.bgColorB, editorStageEditorConfig.bgColorA
+	};
+	deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
+
+	// Textura de fundo do stage
+	if (editorStageEditorConfig.useTextureBg && stageBgTexture)
+		DrawTexturedQuad(stageBgTexture, -1.0f, -1.0f, 1.0f, 1.0f);
+
 	UINT stride = sizeof(Vertex); UINT offset = 0; deviceContext->IASetInputLayout(inputLayout);
 	deviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset); deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	deviceContext->VSSetShader(vertexShader, nullptr, 0); deviceContext->PSSetShader(pixelShader, nullptr, 0);
 
+	// Paddle — textura direcional ou idle ou cor solida
 	if (paddleVisible) {
-		deviceContext->PSSetShader(pixelShaderPaddle, nullptr, 0); deviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset); deviceContext->Draw(6, 0);
-	}
-	deviceContext->PSSetShader(pixelShaderBall, nullptr, 0); deviceContext->IASetVertexBuffers(0, 1, &ballVertexBuffer, &stride, &offset); deviceContext->Draw(6, 0);
+		ID3D11ShaderResourceView* paddleSRV = editorPlayerTexture; // idle
+		if (paddleMoveDir < 0 && editorPlayerRunLeftTexture)
+			paddleSRV = editorPlayerRunLeftTexture;
+		else if (paddleMoveDir > 0 && editorPlayerRunRightTexture)
+			paddleSRV = editorPlayerRunRightTexture;
 
-	deviceContext->PSSetShader(pixelShaderProjectile, nullptr, 0);
+		if (paddleSRV) {
+			DrawTexturedQuad(paddleSRV,
+				paddleX - paddleWidth / 2, paddleY,
+				paddleX + paddleWidth / 2, paddleY + paddleHeight);
+		}
+		else {
+			deviceContext->PSSetShader(pixelShaderPaddle, nullptr, 0);
+			UINT s = sizeof(Vertex), o = 0;
+			deviceContext->IASetInputLayout(inputLayout);
+			deviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &s, &o);
+			deviceContext->VSSetShader(vertexShader, nullptr, 0);
+			deviceContext->Draw(6, 0);
+		}
+	}
+
+	// Bola — textura ou cor solida
+	if (editorBallTexture) {
+		DrawTexturedQuad(editorBallTexture,
+			ballX - ballSize, ballY - ballSize,
+			ballX + ballSize, ballY + ballSize);
+	}
+	else {
+		deviceContext->IASetInputLayout(inputLayout);
+		deviceContext->VSSetShader(vertexShader, nullptr, 0);
+		deviceContext->PSSetShader(pixelShaderBall, nullptr, 0);
+		UINT s = sizeof(Vertex), o = 0;
+		deviceContext->IASetVertexBuffers(0, 1, &ballVertexBuffer, &s, &o);
+		deviceContext->Draw(6, 0);
+	}
+
+	// Projeteis do jogador — textura ou cor solida
 	for (auto& p : projectiles) {
-		if (!p.active) continue; Vertex projVertices[] = { {p.x - (projectileSize * 0.8f), p.y + (projectileSize * 0.8f), 0.0f}, {p.x - (projectileSize * 0.8f), p.y - (projectileSize * 0.8f), 0.0f}, {p.x + (projectileSize * 0.8f), p.y - (projectileSize * 0.8f), 0.0f}, {p.x - (projectileSize * 0.8f), p.y + (projectileSize * 0.8f), 0.0f}, {p.x + (projectileSize * 0.8f), p.y - (projectileSize * 0.8f), 0.0f}, {p.x + (projectileSize * 0.8f), p.y + (projectileSize * 0.8f), 0.0f} };
-		deviceContext->UpdateSubresource(projectileBuffer, 0, nullptr, projVertices, 0, 0); deviceContext->IASetVertexBuffers(0, 1, &projectileBuffer, &stride, &offset); deviceContext->Draw(6, 0);
+		if (!p.active) continue;
+		float ps = projectileSize * 0.8f;
+		if (editorProjectileTexture) {
+			DrawTexturedQuad(editorProjectileTexture,
+				p.x - ps, p.y - ps, p.x + ps, p.y + ps);
+		}
+		else {
+			Vertex projVertices[] = { {p.x - ps, p.y + ps, 0.0f}, {p.x - ps, p.y - ps, 0.0f}, {p.x + ps, p.y - ps, 0.0f}, {p.x - ps, p.y + ps, 0.0f}, {p.x + ps, p.y - ps, 0.0f}, {p.x + ps, p.y + ps, 0.0f} };
+			deviceContext->UpdateSubresource(projectileBuffer, 0, nullptr, projVertices, 0, 0);
+			UINT s = sizeof(Vertex), o = 0;
+			deviceContext->IASetInputLayout(inputLayout);
+			deviceContext->VSSetShader(vertexShader, nullptr, 0);
+			deviceContext->PSSetShader(pixelShaderProjectile, nullptr, 0);
+			deviceContext->IASetVertexBuffers(0, 1, &projectileBuffer, &s, &o); deviceContext->Draw(6, 0);
+		}
 	}
 
-	deviceContext->PSSetShader(pixelShaderObstacle, nullptr, 0); deviceContext->IASetVertexBuffers(0, 1, &obstacleBuffer, &stride, &offset);
+	// Obstaculos — textura ou cor do obstaculo
 	for (auto& obstacle : obstacles) {
-		if (!obstacle.active) continue; Vertex vertices[] = { {obstacle.x - obstacle.width / 2, obstacle.y + obstacle.height, 0.0f}, {obstacle.x - obstacle.width / 2, obstacle.y, 0.0f}, {obstacle.x + obstacle.width / 2, obstacle.y, 0.0f}, {obstacle.x - obstacle.width / 2, obstacle.y + obstacle.height, 0.0f}, {obstacle.x + obstacle.width / 2, obstacle.y, 0.0f}, {obstacle.x + obstacle.width / 2, obstacle.y + obstacle.height, 0.0f} };
-		deviceContext->UpdateSubresource(obstacleBuffer, 0, nullptr, vertices, 0, 0); deviceContext->Draw(6, 0);
+		if (!obstacle.active) continue;
+		if (obstacle.useTexture && obstacle.textureSRV) {
+			DrawTexturedQuad(obstacle.textureSRV,
+				obstacle.x - obstacle.width / 2, obstacle.y,
+				obstacle.x + obstacle.width / 2, obstacle.y + obstacle.height);
+		}
+		else {
+			Vertex vertices[] = { {obstacle.x - obstacle.width / 2, obstacle.y + obstacle.height, 0.0f}, {obstacle.x - obstacle.width / 2, obstacle.y, 0.0f}, {obstacle.x + obstacle.width / 2, obstacle.y, 0.0f}, {obstacle.x - obstacle.width / 2, obstacle.y + obstacle.height, 0.0f}, {obstacle.x + obstacle.width / 2, obstacle.y, 0.0f}, {obstacle.x + obstacle.width / 2, obstacle.y + obstacle.height, 0.0f} };
+			deviceContext->UpdateSubresource(obstacleBuffer, 0, nullptr, vertices, 0, 0);
+			XMFLOAT4 obsColor(obstacle.colorR, obstacle.colorG, obstacle.colorB, obstacle.colorA);
+			deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &obsColor, 0, 0);
+			deviceContext->IASetInputLayout(inputLayout);
+			deviceContext->VSSetShader(vertexShader, nullptr, 0);
+			deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0);
+			deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer);
+			UINT s = sizeof(Vertex), o = 0;
+			deviceContext->IASetVertexBuffers(0, 1, &obstacleBuffer, &s, &o); deviceContext->Draw(6, 0);
+		}
 	}
 
-	deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0); deviceContext->IASetVertexBuffers(0, 1, &blockVertexBuffer, &stride, &offset);
+	// Blocos/Inimigos — textura individual ou cor do bloco configurada no editor
 	for (auto& block : blocks) {
-		if (!block.active) continue; XMFLOAT4 color;
-		if (block.hits >= 3) color = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f); else if (block.hits == 2) color = XMFLOAT4(0.2f, 0.2f, 0.2f, 1.0f); else if (block.hits == 1) color = XMFLOAT4(0.4f, 0.4f, 0.4f, 1.0f);
-		deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer); deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &color, 0, 0);
-		Vertex vertices[] = { {block.x - block.width / 2, block.y + block.height, 0.0f}, {block.x - block.width / 2, block.y, 0.0f}, {block.x + block.width / 2, block.y, 0.0f}, {block.x - block.width / 2, block.y + block.height, 0.0f}, {block.x + block.width / 2, block.y, 0.0f}, {block.x + block.width / 2, block.y + block.height, 0.0f} };
-		deviceContext->UpdateSubresource(blockVertexBuffer, 0, nullptr, vertices, 0, 0); deviceContext->Draw(6, 0);
+		if (!block.active) continue;
+		if (block.useTexture && block.textureSRV) {
+			DrawTexturedQuad(block.textureSRV,
+				block.x - block.width / 2, block.y,
+				block.x + block.width / 2, block.y + block.height);
+		}
+		else {
+			XMFLOAT4 color(block.colorR, block.colorG, block.colorB, block.colorA);
+			deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer); deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &color, 0, 0);
+			Vertex vertices[] = { {block.x - block.width / 2, block.y + block.height, 0.0f}, {block.x - block.width / 2, block.y, 0.0f}, {block.x + block.width / 2, block.y, 0.0f}, {block.x - block.width / 2, block.y + block.height, 0.0f}, {block.x + block.width / 2, block.y, 0.0f}, {block.x + block.width / 2, block.y + block.height, 0.0f} };
+			deviceContext->UpdateSubresource(blockVertexBuffer, 0, nullptr, vertices, 0, 0);
+			UINT s = sizeof(Vertex), o = 0;
+			deviceContext->IASetInputLayout(inputLayout);
+			deviceContext->VSSetShader(vertexShader, nullptr, 0);
+			deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0);
+			deviceContext->IASetVertexBuffers(0, 1, &blockVertexBuffer, &s, &o); deviceContext->Draw(6, 0);
+		}
 	}
 
+	// Balas inimigas
 	deviceContext->PSSetShader(pixelShaderEnemyBullet, nullptr, 0);
 	for (auto& bullet : enemyBullets) {
 		if (!bullet.active) continue; Vertex verticesBullet[] = { {bullet.x - bullet.size, bullet.y + bullet.size, 0.0f}, {bullet.x - bullet.size, bullet.y - bullet.size, 0.0f}, {bullet.x + bullet.size, bullet.y - bullet.size, 0.0f}, {bullet.x - bullet.size, bullet.y + bullet.size, 0.0f}, {bullet.x + bullet.size, bullet.y - bullet.size, 0.0f}, {bullet.x + bullet.size, bullet.y + bullet.size, 0.0f} };
-		deviceContext->IASetVertexBuffers(0, 1, &enemyBulletBuffer, &stride, &offset); deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		UINT s = sizeof(Vertex), o = 0;
+		deviceContext->IASetInputLayout(inputLayout);
+		deviceContext->VSSetShader(vertexShader, nullptr, 0);
+		deviceContext->IASetVertexBuffers(0, 1, &enemyBulletBuffer, &s, &o); deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		deviceContext->UpdateSubresource(enemyBulletBuffer, 0, nullptr, verticesBullet, 0, 0); deviceContext->Draw(6, 0);
 	}
 
+	// Dropped items (queda)
+	for (auto& d : droppedItems) {
+		if (!d.active) continue;
+		float dsz = 0.02f;
+		float dr = 0.3f, dg = 1.0f, db = 0.3f;
+		switch (d.type) {
+		case 0: dr = 1.0f; dg = 0.3f; db = 0.3f; break; // vida = vermelho
+		case 1: dr = 0.3f; dg = 0.5f; db = 1.0f; break; // shield = azul
+		case 2: dr = 1.0f; dg = 0.7f; db = 0.1f; break; // bomba = laranja
+		case 3: dr = 1.0f; dg = 1.0f; db = 0.2f; break; // pontos = amarelo
+		}
+		Vertex dv[] = { {d.x-dsz,d.y+dsz,0},{d.x-dsz,d.y-dsz,0},{d.x+dsz,d.y-dsz,0},{d.x-dsz,d.y+dsz,0},{d.x+dsz,d.y-dsz,0},{d.x+dsz,d.y+dsz,0} };
+		deviceContext->UpdateSubresource(blockVertexBuffer, 0, nullptr, dv, 0, 0);
+		XMFLOAT4 dc(dr, dg, db, 1.0f);
+		deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &dc, 0, 0);
+		deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0);
+		deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer);
+		UINT s = sizeof(Vertex), o = 0;
+		deviceContext->IASetInputLayout(inputLayout);
+		deviceContext->VSSetShader(vertexShader, nullptr, 0);
+		deviceContext->IASetVertexBuffers(0, 1, &blockVertexBuffer, &s, &o); deviceContext->Draw(6, 0);
+	}
+
+	// Force field
 	if (forceFieldActive) {
 		deviceContext->PSSetShader(pixelShaderProjectile, nullptr, 0); const int segments = 32; std::vector<Vertex> circleVerts; circleVerts.push_back({ forceFieldX, forceFieldY, 0.0f });
 		for (int i = 0; i <= segments; i++) {
 			float theta = (2 * 3.14159265f * i) / segments; float x = forceFieldX + cosf(theta) * forceFieldRadius; float y = forceFieldY + sinf(theta) * forceFieldRadius; circleVerts.push_back({ x, y, 0.0f });
 		}
-		std::vector<Vertex> fanVerts; for (int i = 1; i < circleVerts.size() - 1; i++) {
+		std::vector<Vertex> fanVerts; for (int i = 1; i < (int)circleVerts.size() - 1; i++) {
 			fanVerts.push_back(circleVerts[0]); fanVerts.push_back(circleVerts[i]); fanVerts.push_back(circleVerts[i + 1]);
 		}
-		deviceContext->UpdateSubresource(forceFieldBuffer, 0, nullptr, fanVerts.data(), 0, 0); deviceContext->IASetVertexBuffers(0, 1, &forceFieldBuffer, &stride, &offset); deviceContext->Draw(static_cast<UINT>(fanVerts.size()), 0);
+		deviceContext->IASetInputLayout(inputLayout);
+		deviceContext->VSSetShader(vertexShader, nullptr, 0);
+		deviceContext->UpdateSubresource(forceFieldBuffer, 0, nullptr, fanVerts.data(), 0, 0);
+		UINT s = sizeof(Vertex), o = 0;
+		deviceContext->IASetVertexBuffers(0, 1, &forceFieldBuffer, &s, &o); deviceContext->Draw(static_cast<UINT>(fanVerts.size()), 0);
 	}
 
+	// Dash shield
 	if (dashActive) {
 		deviceContext->PSSetShader(pixelShaderProjectile, nullptr, 0); float shieldWidth = 0.25f; float shieldHeight = 0.15f; float shieldY = paddleY;
 		Vertex dashShieldVerts[] = { {paddleX - shieldWidth / 2, shieldY + shieldHeight, 0.0f}, {paddleX - shieldWidth / 2, shieldY, 0.0f}, {paddleX + shieldWidth / 2, shieldY, 0.0f}, {paddleX - shieldWidth / 2, shieldY + shieldHeight, 0.0f}, {paddleX + shieldWidth / 2, shieldY, 0.0f}, {paddleX + shieldWidth / 2, shieldY + shieldHeight, 0.0f} };
-		deviceContext->UpdateSubresource(dashShieldBuffer, 0, nullptr, dashShieldVerts, 0, 0); deviceContext->IASetVertexBuffers(0, 1, &dashShieldBuffer, &stride, &offset); deviceContext->Draw(6, 0);
+		deviceContext->IASetInputLayout(inputLayout);
+		deviceContext->VSSetShader(vertexShader, nullptr, 0);
+		deviceContext->UpdateSubresource(dashShieldBuffer, 0, nullptr, dashShieldVerts, 0, 0);
+		UINT s = sizeof(Vertex), o = 0;
+		deviceContext->IASetVertexBuffers(0, 1, &dashShieldBuffer, &s, &o); deviceContext->Draw(6, 0);
 	}
 }
 
@@ -551,11 +672,11 @@ static void RenderPreview_Obstacle()
 
 static void RenderPreview_Stage()
 {
+	// Stage preview cobre a tela inteira — o stage eh o viewport completo do jogo
 	if (editorStageEditorConfig.useTextureBg && stageBgTexture)
-		DrawTexturedQuad(stageBgTexture, PREV_L, PREV_B, PREV_R, PREV_T);
+		DrawTexturedQuad(stageBgTexture, -1.0f, -1.0f, 1.0f, 1.0f);
 	else
-		DrawQuadColor(PREVIEW_CX, PREVIEW_CY,
-			(PREV_R - PREV_L) / 2.0f, (PREV_T - PREV_B) / 2.0f,
+		DrawQuadColor(0.0f, 0.0f, 1.0f, 1.0f,
 			editorStageEditorConfig.bgColorR, editorStageEditorConfig.bgColorG,
 			editorStageEditorConfig.bgColorB, editorStageEditorConfig.bgColorA);
 
@@ -728,8 +849,9 @@ void RenderEditor()
 	float clearColor[4] = { 0.08f, 0.08f, 0.12f, 1.0f };
 	deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
 
-	// Linha divisoria (borda direita do painel ImGui)
-	DrawQuadColor(-0.05f, 0.0f, 0.003f, 1.0f, 0.25f, 0.25f, 0.30f, 1.0f);
+	// Linha divisoria (borda direita do painel ImGui) — nao desenhar no Stage (fullscreen)
+	if (currentEditorMode != EDITOR_MODE_STAGE)
+		DrawQuadColor(-0.05f, 0.0f, 0.003f, 1.0f, 0.25f, 0.25f, 0.30f, 1.0f);
 
 	switch (currentEditorMode) {
 	case EDITOR_MODE_PLAYER:   RenderPreview_Player();   break;

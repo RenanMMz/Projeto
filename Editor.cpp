@@ -1,6 +1,7 @@
 #include <fstream>
 #include <sstream>
 #include <cmath>
+#include <functional>
 #include "Editor.h"
 #include "Render.h"
 #include <windows.h>
@@ -236,6 +237,12 @@ static bool  s_dragging = false;
 static float s_dragOffsetX = 0.0f;
 static float s_dragOffsetY = 0.0f;
 
+// Click-to-set state for boss viewport interaction (used by UpdateEditor + RenderEditorBoss)
+enum BossPickTarget { BOSS_PICK_NONE = 0, BOSS_PICK_XY };
+static BossPickTarget s_bossPickTarget = BOSS_PICK_NONE;
+static float* s_bossPickX = nullptr;
+static float* s_bossPickY = nullptr;
+
 static void ScreenToNDC(POINT pt, float& ndcX, float& ndcY)
 {
 	ndcX = (pt.x / 400.0f) - 1.0f;
@@ -244,6 +251,8 @@ static void ScreenToNDC(POINT pt, float& ndcX, float& ndcY)
 
 void UpdateEditor()
 {
+	static bool s_bossPickWasDown = false; // track LMB for boss pick (single-click, not drag)
+
 	if (!ImGui::GetIO().WantCaptureMouse) {
 		if (currentEditorMode == EDITOR_MODE_STAGE) {
 			POINT pt; GetCursorPos(&pt); ScreenToClient(g_hWnd, &pt);
@@ -312,6 +321,20 @@ void UpdateEditor()
 				s_dragObjectIdx = -1;
 			}
 		}
+		// Boss tab: click-to-set position picking
+		else if (currentEditorMode == EDITOR_MODE_BOSS && s_bossPickTarget == BOSS_PICK_XY && s_bossPickX && s_bossPickY) {
+			bool lmbDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+			if (lmbDown && !s_bossPickWasDown) {
+				POINT pt; GetCursorPos(&pt); ScreenToClient(g_hWnd, &pt);
+				float ndcX, ndcY;
+				ScreenToNDC(pt, ndcX, ndcY);
+				*s_bossPickX = ndcX;
+				*s_bossPickY = ndcY;
+				s_bossPickTarget = BOSS_PICK_NONE;
+				s_bossPickX = s_bossPickY = nullptr;
+			}
+			s_bossPickWasDown = lmbDown;
+		}
 	}
 	else {
 		// ImGui capturou o mouse — cancelar drag
@@ -319,6 +342,7 @@ void UpdateEditor()
 			s_dragging = false;
 			s_dragObjectIdx = -1;
 		}
+		s_bossPickWasDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
 	}
 }
 
@@ -569,52 +593,226 @@ bool LoadBlockConfig(const char* fullPath)
 }
 
 // ==========================================
-// SAVE / LOAD � BOSS (estrutura simplificada � editor completo na proxima iteracao)
+// SAVE / LOAD — BOSS (completo: fases HP, scripts, familiares, nos multi-part)
 // ==========================================
+
+static void SaveBossAction(std::ofstream& f, const char* pre, const BossAction& act)
+{
+	f << "  \"" << pre << "_type\": " << (int)act.type << ",\n";
+	f << "  \"" << pre << "_targetX\": " << act.targetX << ",\n";
+	f << "  \"" << pre << "_targetY\": " << act.targetY << ",\n";
+	f << "  \"" << pre << "_speed\": " << act.speed << ",\n";
+	f << "  \"" << pre << "_bulletPattern\": " << act.bulletPattern << ",\n";
+	f << "  \"" << pre << "_bulletCount\": " << act.bulletCount << ",\n";
+	f << "  \"" << pre << "_bulletSpeed\": " << act.bulletSpeed << ",\n";
+	f << "  \"" << pre << "_duration\": " << act.duration << ",\n";
+	f << "  \"" << pre << "_fixedPtCount\": " << act.fixedPointCount << ",\n";
+	for (int fp = 0; fp < act.fixedPointCount; fp++) {
+		f << "  \"" << pre << "_fp" << fp << "x\": " << act.fixedPtsX[fp] << ",\n";
+		f << "  \"" << pre << "_fp" << fp << "y\": " << act.fixedPtsY[fp] << ",\n";
+	}
+	f << "  \"" << pre << "_spawnX\": " << act.spawnX << ",\n";
+	f << "  \"" << pre << "_spawnY\": " << act.spawnY << ",\n";
+	f << "  \"" << pre << "_minionIdx\": " << act.minionPatternIndex << ",\n";
+	f << "  \"" << pre << "_spritePath\": \"" << act.spritePath << "\",\n";
+	f << "  \"" << pre << "_invincible\": " << (act.invincibleOn ? 1 : 0) << ",\n";
+}
+
+static void SaveBossScript(std::ofstream& f, const char* pre, const BossScript& sc)
+{
+	f << "  \"" << pre << "_actionCount\": " << sc.actionCount << ",\n";
+	f << "  \"" << pre << "_loopFromStep\": " << sc.loopFromStep << ",\n";
+	for (int a = 0; a < sc.actionCount; a++) {
+		char apre[96]; sprintf_s(apre, "%s_a%d", pre, a);
+		SaveBossAction(f, apre, sc.actions[a]);
+	}
+}
 
 bool SaveBossConfig(const char* fullPath)
 {
 	std::ofstream f(fullPath); if (!f.is_open()) return false;
+	auto& bc = editorBossConfig;
 	f << "{\n";
-	f << "  \"name\": \"" << editorBossConfig.name << "\",\n";
-	f << "  \"texturePath\": \"" << editorBossConfig.texturePath << "\",\n";
-	f << "  \"maxHP\": " << editorBossConfig.maxHP << ",\n";
-	f << "  \"width\": " << editorBossConfig.width << ",\n";
-	f << "  \"height\": " << editorBossConfig.height << ",\n";
-	f << "  \"archetype\": " << (int)editorBossConfig.archetype << ",\n";
-	f << "  \"startX\": " << editorBossConfig.startX << ",\n";
-	f << "  \"startY\": " << editorBossConfig.startY << ",\n";
-	f << "  \"hpPhaseCount\": " << editorBossConfig.hpPhaseCount << "\n";
-	f << "}\n"; f.close(); return true;
+	f << "  \"name\": \"" << bc.name << "\",\n";
+	f << "  \"texturePath\": \"" << bc.texturePath << "\",\n";
+	f << "  \"maxHP\": " << bc.maxHP << ",\n";
+	f << "  \"width\": " << bc.width << ",\n";
+	f << "  \"height\": " << bc.height << ",\n";
+	f << "  \"archetype\": " << (int)bc.archetype << ",\n";
+	f << "  \"startX\": " << bc.startX << ",\n";
+	f << "  \"startY\": " << bc.startY << ",\n";
+	f << "  \"hpPhaseCount\": " << bc.hpPhaseCount << ",\n";
+	f << "  \"familiarCount\": " << bc.familiarCount << ",\n";
+	f << "  \"nodeCount\": " << bc.nodeCount << ",\n";
+
+	// HP Phases + Scripts
+	for (int p = 0; p < bc.hpPhaseCount; p++) {
+		char pre[32]; sprintf_s(pre, "hp%d", p);
+		f << "  \"" << pre << "_threshold\": " << bc.hpPhases[p].hpThresholdPct << ",\n";
+		char scPre[48]; sprintf_s(scPre, "hp%d", p);
+		SaveBossScript(f, scPre, bc.hpPhases[p].script);
+	}
+
+	// Familiars
+	for (int i = 0; i < bc.familiarCount; i++) {
+		auto& fam = bc.familiars[i];
+		char pre[32]; sprintf_s(pre, "fam%d", i);
+		f << "  \"" << pre << "_offsetX\": " << fam.relOffsetX << ",\n";
+		f << "  \"" << pre << "_offsetY\": " << fam.relOffsetY << ",\n";
+		f << "  \"" << pre << "_orbitRadius\": " << fam.orbitRadius << ",\n";
+		f << "  \"" << pre << "_orbitSpeed\": " << fam.orbitSpeed << ",\n";
+		f << "  \"" << pre << "_bulletPattern\": " << fam.bulletPattern << ",\n";
+		f << "  \"" << pre << "_bulletCount\": " << fam.bulletCount << ",\n";
+		f << "  \"" << pre << "_bulletSpeed\": " << fam.bulletSpeed << ",\n";
+		f << "  \"" << pre << "_shootInterval\": " << fam.shootIntervalSec << ",\n";
+		f << "  \"" << pre << "_texture\": \"" << fam.texturePath << "\",\n";
+	}
+
+	// Multi-part Nodes + Scripts
+	for (int i = 0; i < bc.nodeCount; i++) {
+		auto& node = bc.nodes[i];
+		char pre[32]; sprintf_s(pre, "node%d", i);
+		f << "  \"" << pre << "_texture\": \"" << node.texturePath << "\",\n";
+		f << "  \"" << pre << "_startX\": " << node.startX << ",\n";
+		f << "  \"" << pre << "_startY\": " << node.startY << ",\n";
+		SaveBossScript(f, pre, node.script);
+	}
+
+	f << "  \"__end\": 0\n";
+	f << "}\n";
+	f.close(); return true;
+}
+
+// Helper: parse "prefix<int>_rest" from a key, returns index and rest. -1 if no match.
+static bool ParseKeyPrefix(const std::string& key, const char* prefix, int& idx, std::string& rest)
+{
+	size_t plen = strlen(prefix);
+	if (key.compare(0, plen, prefix) != 0) return false;
+	size_t numEnd = key.find('_', plen);
+	if (numEnd == std::string::npos) return false;
+	try { idx = std::stoi(key.substr(plen, numEnd - plen)); } catch (...) { return false; }
+	rest = key.substr(numEnd + 1);
+	return true;
+}
+
+static void LoadBossActionField(BossAction& act, const std::string& field,
+	const std::function<float()>& valF, const std::function<int()>& valI,
+	const std::function<void(char*, int)>& valStr)
+{
+	if (field == "type") act.type = (BossActionType)valI();
+	else if (field == "targetX") act.targetX = valF();
+	else if (field == "targetY") act.targetY = valF();
+	else if (field == "speed") act.speed = valF();
+	else if (field == "bulletPattern") act.bulletPattern = valI();
+	else if (field == "bulletCount") act.bulletCount = valI();
+	else if (field == "bulletSpeed") act.bulletSpeed = valF();
+	else if (field == "duration") act.duration = valF();
+	else if (field == "fixedPtCount") act.fixedPointCount = valI();
+	else if (field == "spawnX") act.spawnX = valF();
+	else if (field == "spawnY") act.spawnY = valF();
+	else if (field == "minionIdx") act.minionPatternIndex = valI();
+	else if (field == "spritePath") valStr(act.spritePath, 256);
+	else if (field == "invincible") act.invincibleOn = (valI() != 0);
+	else {
+		// Fixed points: fp0x, fp0y, etc.
+		int fpIdx = -1; char axis = 0;
+		if (sscanf_s(field.c_str(), "fp%d%c", &fpIdx, &axis, 1) == 2 && fpIdx >= 0 && fpIdx < 8) {
+			if (axis == 'x') act.fixedPtsX[fpIdx] = valF();
+			else if (axis == 'y') act.fixedPtsY[fpIdx] = valF();
+		}
+	}
 }
 
 bool LoadBossConfig(const char* fullPath)
 {
 	std::ifstream f(fullPath); if (!f.is_open()) return false;
+	editorBossConfig = {};
+	auto& bc = editorBossConfig;
+
 	std::string line;
 	while (std::getline(f, line)) {
-		if (line.find("\"maxHP\"") != std::string::npos) sscanf_s(line.c_str(), " \"maxHP\": %d,", &editorBossConfig.maxHP);
-		if (line.find("\"width\"") != std::string::npos) sscanf_s(line.c_str(), " \"width\": %f,", &editorBossConfig.width);
-		if (line.find("\"height\"") != std::string::npos) sscanf_s(line.c_str(), " \"height\": %f,", &editorBossConfig.height);
-		if (line.find("\"archetype\"") != std::string::npos) {
-			int v; sscanf_s(line.c_str(), " \"archetype\": %d,", &v); editorBossConfig.archetype = (BossArchetype)v;
-		}
-		if (line.find("\"startX\"") != std::string::npos) sscanf_s(line.c_str(), " \"startX\": %f,", &editorBossConfig.startX);
-		if (line.find("\"startY\"") != std::string::npos) sscanf_s(line.c_str(), " \"startY\": %f,", &editorBossConfig.startY);
-		if (line.find("\"hpPhaseCount\"") != std::string::npos) sscanf_s(line.c_str(), " \"hpPhaseCount\": %d,", &editorBossConfig.hpPhaseCount);
-		auto readStr = [&](const char* key, char* dest, int sz) {
-			if (line.find(key) != std::string::npos) {
-				size_t s = line.find(": \"") + 3, e = line.rfind("\"");
-				if (s < e) {
-					std::string v = line.substr(s, e - s); strcpy_s(dest, sz, v.c_str());
-				}
+		// Extract key between first pair of quotes
+		size_t q1 = line.find('"'); if (q1 == std::string::npos) continue;
+		size_t q2 = line.find('"', q1 + 1); if (q2 == std::string::npos) continue;
+		std::string key = line.substr(q1 + 1, q2 - q1 - 1);
+
+		// Extract value string after ": "
+		size_t colon = line.find(':', q2); if (colon == std::string::npos) continue;
+		std::string vstr = line.substr(colon + 1);
+		while (!vstr.empty() && (vstr.front() == ' ' || vstr.front() == '\t')) vstr.erase(vstr.begin());
+		while (!vstr.empty() && (vstr.back() == ',' || vstr.back() == ' ' || vstr.back() == '\n' || vstr.back() == '\r')) vstr.pop_back();
+
+		auto valF = [&]() -> float { try { return std::stof(vstr); } catch (...) { return 0.0f; } };
+		auto valI = [&]() -> int { try { return std::stoi(vstr); } catch (...) { return 0; } };
+		auto valStr = [&](char* dest, int sz) {
+			size_t s = vstr.find('"'), e = vstr.rfind('"');
+			if (s != std::string::npos && e != std::string::npos && s < e) {
+				std::string v = vstr.substr(s + 1, e - s - 1);
+				strcpy_s(dest, sz, v.c_str());
 			}
-			};
-		readStr("\"name\"", editorBossConfig.name, 64);
-		readStr("\"texturePath\"", editorBossConfig.texturePath, 256);
+		};
+
+		// Simple keys
+		if (key == "name") { valStr(bc.name, 64); continue; }
+		if (key == "texturePath") { valStr(bc.texturePath, 256); continue; }
+		if (key == "maxHP") { bc.maxHP = valI(); continue; }
+		if (key == "width") { bc.width = valF(); continue; }
+		if (key == "height") { bc.height = valF(); continue; }
+		if (key == "archetype") { bc.archetype = (BossArchetype)valI(); continue; }
+		if (key == "startX") { bc.startX = valF(); continue; }
+		if (key == "startY") { bc.startY = valF(); continue; }
+		if (key == "hpPhaseCount") { bc.hpPhaseCount = valI(); continue; }
+		if (key == "familiarCount") { bc.familiarCount = valI(); continue; }
+		if (key == "nodeCount") { bc.nodeCount = valI(); continue; }
+
+		int idx = -1; std::string rest;
+
+		// HP Phase keys: "hp<p>_..."
+		if (ParseKeyPrefix(key, "hp", idx, rest) && idx >= 0 && idx < BOSS_MAX_HP_PHASES) {
+			if (rest == "threshold") { bc.hpPhases[idx].hpThresholdPct = valF(); continue; }
+			if (rest == "actionCount") { bc.hpPhases[idx].script.actionCount = valI(); continue; }
+			if (rest == "loopFromStep") { bc.hpPhases[idx].script.loopFromStep = valI(); continue; }
+			// Action fields: "a<a>_field"
+			int aIdx = -1; std::string aField;
+			if (ParseKeyPrefix(rest, "a", aIdx, aField) && aIdx >= 0 && aIdx < BOSS_SCRIPT_MAX_ACTIONS) {
+				LoadBossActionField(bc.hpPhases[idx].script.actions[aIdx], aField, valF, valI, valStr);
+			}
+			continue;
+		}
+
+		// Familiar keys: "fam<i>_..."
+		if (ParseKeyPrefix(key, "fam", idx, rest) && idx >= 0 && idx < BOSS_MAX_FAMILIARS) {
+			auto& fam = bc.familiars[idx];
+			if (rest == "offsetX") fam.relOffsetX = valF();
+			else if (rest == "offsetY") fam.relOffsetY = valF();
+			else if (rest == "orbitRadius") fam.orbitRadius = valF();
+			else if (rest == "orbitSpeed") fam.orbitSpeed = valF();
+			else if (rest == "bulletPattern") fam.bulletPattern = valI();
+			else if (rest == "bulletCount") fam.bulletCount = valI();
+			else if (rest == "bulletSpeed") fam.bulletSpeed = valF();
+			else if (rest == "shootInterval") fam.shootIntervalSec = valF();
+			else if (rest == "texture") valStr(fam.texturePath, 256);
+			continue;
+		}
+
+		// Node keys: "node<i>_..."
+		if (ParseKeyPrefix(key, "node", idx, rest) && idx >= 0 && idx < BOSS_MAX_NODES) {
+			auto& node = bc.nodes[idx];
+			if (rest == "texture") { valStr(node.texturePath, 256); continue; }
+			if (rest == "startX") { node.startX = valF(); continue; }
+			if (rest == "startY") { node.startY = valF(); continue; }
+			if (rest == "actionCount") { node.script.actionCount = valI(); continue; }
+			if (rest == "loopFromStep") { node.script.loopFromStep = valI(); continue; }
+			int aIdx = -1; std::string aField;
+			if (ParseKeyPrefix(rest, "a", aIdx, aField) && aIdx >= 0 && aIdx < BOSS_SCRIPT_MAX_ACTIONS) {
+				LoadBossActionField(node.script.actions[aIdx], aField, valF, valI, valStr);
+			}
+			continue;
+		}
 	}
+
 	f.close();
-	LoadSRV(editorBossConfig.texturePath, &editorBossTexture);
+	LoadSRV(bc.texturePath, &editorBossTexture);
 	return true;
 }
 
@@ -1071,6 +1269,19 @@ void RenderEditorEnemy()
 // PAINEL � BOSS
 // ==========================================
 
+static bool PickPosButton(const char* label, float* px, float* py)
+{
+	bool active = (s_bossPickTarget == BOSS_PICK_XY && s_bossPickX == px && s_bossPickY == py);
+	if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.6f, 0.1f, 1.0f));
+	bool clicked = ImGui::SmallButton(label);
+	if (active) ImGui::PopStyleColor();
+	if (clicked) {
+		if (active) { s_bossPickTarget = BOSS_PICK_NONE; s_bossPickX = s_bossPickY = nullptr; }
+		else { s_bossPickTarget = BOSS_PICK_XY; s_bossPickX = px; s_bossPickY = py; }
+	}
+	return clicked;
+}
+
 static void BossActionEditor(BossAction& a, int idx)
 {
 	ImGui::PushID(idx);
@@ -1088,6 +1299,7 @@ static void BossActionEditor(BossAction& a, int idx)
 	case BOSS_ACT_TELEPORT:
 		ImGui::DragFloat("Alvo X##act", &a.targetX, 0.01f, -1.0f, 1.0f);
 		ImGui::DragFloat("Alvo Y##act", &a.targetY, 0.01f, -1.0f, 1.0f);
+		PickPosButton("Clicar no viewport##act_tgt", &a.targetX, &a.targetY);
 		if (a.type == BOSS_ACT_MOVE_TO) ImGui::SliderFloat("Velocidade##act", &a.speed, 0.001f, 0.05f);
 		break;
 	case BOSS_ACT_SHOOT_TIMED:
@@ -1104,6 +1316,9 @@ static void BossActionEditor(BossAction& a, int idx)
 			ImGui::DragFloat(lx, &a.fixedPtsX[i], 0.01f, -1.0f, 1.0f);
 			ImGui::SameLine();
 			ImGui::DragFloat(ly, &a.fixedPtsY[i], 0.01f, -1.0f, 1.0f);
+			ImGui::SameLine();
+			char pickLabel[32]; sprintf_s(pickLabel, "Pick##fp%d", i);
+			PickPosButton(pickLabel, &a.fixedPtsX[i], &a.fixedPtsY[i]);
 		}
 		break;
 	case BOSS_ACT_CHARGE_PLAYER:
@@ -1115,6 +1330,7 @@ static void BossActionEditor(BossAction& a, int idx)
 	case BOSS_ACT_SPAWN_MINION:
 		ImGui::DragFloat("Spawn X##actsm", &a.spawnX, 0.01f, -1.0f, 1.0f);
 		ImGui::DragFloat("Spawn Y##actsm", &a.spawnY, 0.01f, -1.0f, 1.0f);
+		PickPosButton("Clicar no viewport##act_spawn", &a.spawnX, &a.spawnY);
 		ImGui::SliderInt("Template IDX##actsm", &a.minionPatternIndex, -1, 7);
 		ImGui::TextDisabled("-1 = template padrao do BossConfig");
 		break;
@@ -1193,6 +1409,10 @@ void RenderEditorBoss()
 	ImGui::TextDisabled("Posicao inicial (NDC):");
 	ImGui::DragFloat("Start X##bss", &editorBossConfig.startX, 0.01f, -1.0f, 1.0f);
 	ImGui::DragFloat("Start Y##bss", &editorBossConfig.startY, 0.01f, -1.0f, 1.0f);
+	PickPosButton("Clicar no viewport##boss_start", &editorBossConfig.startX, &editorBossConfig.startY);
+	if (s_bossPickTarget != BOSS_PICK_NONE) {
+		ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), ">> Clique no viewport para definir posicao <<");
+	}
 
 	// Arquetipo
 	const char* archNames[] = { "Scripted", "Est�tico", "Est�tico + Familiares", "Multi-Part" };
@@ -1248,6 +1468,7 @@ void RenderEditorBoss()
 					TextureButton("Sprite##node", node.texturePath, 256, "spr_node");
 					ImGui::DragFloat("Start X##node", &node.startX, 0.01f, -1.0f, 1.0f);
 					ImGui::DragFloat("Start Y##node", &node.startY, 0.01f, -1.0f, 1.0f);
+					{ char pk[32]; sprintf_s(pk, "Pick##nd%d", i); PickPosButton(pk, &node.startX, &node.startY); }
 					char nodeUid[32]; sprintf_s(nodeUid, "node_script_%d", i);
 					if (ImGui::TreeNode("Script do No")) {
 						BossScriptEditor(node.script, nodeUid);

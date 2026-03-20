@@ -632,7 +632,8 @@ static void ResetEnemyDemo()
 
 static void ResetBossDemo()
 {
-	s_demoBX = PREVIEW_CX; s_demoBY = 0.5f;
+	s_demoBX = (editorBossConfig.startX != 0.0f) ? editorBossConfig.startX : PREVIEW_CX;
+	s_demoBY = (editorBossConfig.startY != 0.0f) ? editorBossConfig.startY : 0.5f;
 	s_demoBActIdx = 0; s_demoBTimer = 0.0f;
 	s_demoBInit = true;
 }
@@ -798,16 +799,23 @@ static void RenderPreview_Boss()
 {
 	float hw = (editorBossConfig.width > 0) ? editorBossConfig.width / 2.0f : 0.1f;
 	float hh = (editorBossConfig.height > 0) ? editorBossConfig.height / 2.0f : 0.1f;
-	float cx = PREVIEW_CX, cy = 0.5f;
+
+	// Use configured start position (or center as fallback)
+	float startCX = (editorBossConfig.startX != 0.0f) ? editorBossConfig.startX : PREVIEW_CX;
+	float startCY = (editorBossConfig.startY != 0.0f) ? editorBossConfig.startY : 0.5f;
+	float cx = startCX, cy = startCY;
+
+	// Determine current HP phase for drawing targets
+	int currentPhase = 0;
+	if (editorBossConfig.hpPhaseCount > 0) {
+		for (int i = 0; i < editorBossConfig.hpPhaseCount; i++)
+			if (editorDemoBossHPPct <= editorBossConfig.hpPhases[i].hpThresholdPct) currentPhase = i;
+	}
 
 	if (editorDemoActive) {
 		if (!s_demoBInit) ResetBossDemo();
 		if (editorBossConfig.hpPhaseCount > 0) {
-			// Seleciona fase
-			int ph = 0;
-			for (int i = 0; i < editorBossConfig.hpPhaseCount; i++)
-				if (editorDemoBossHPPct <= editorBossConfig.hpPhases[i].hpThresholdPct) ph = i;
-			BossScript& sc = editorBossConfig.hpPhases[ph].script;
+			BossScript& sc = editorBossConfig.hpPhases[currentPhase].script;
 			if (sc.actionCount > 0) {
 				BossAction& act = sc.actions[s_demoBActIdx % sc.actionCount];
 				s_demoBTimer += 1.0f / 60.0f;
@@ -841,6 +849,27 @@ static void RenderPreview_Boss()
 		cx = s_demoBX; cy = s_demoBY;
 	}
 
+	// Draw start position marker (small diamond)
+	DrawQuadColor(startCX, startCY, 0.015f, 0.015f, 0.3f, 0.9f, 0.3f, 0.6f);
+
+	// Draw movement target markers for current phase script
+	if (editorBossConfig.hpPhaseCount > 0) {
+		BossScript& sc = editorBossConfig.hpPhases[currentPhase].script;
+		for (int i = 0; i < sc.actionCount; i++) {
+			BossAction& act = sc.actions[i];
+			if (act.type == BOSS_ACT_MOVE_TO || act.type == BOSS_ACT_TELEPORT) {
+				float r = (act.type == BOSS_ACT_MOVE_TO) ? 0.3f : 0.9f;
+				float g = (act.type == BOSS_ACT_MOVE_TO) ? 0.6f : 0.3f;
+				DrawQuadColor(act.targetX, act.targetY, 0.012f, 0.012f, r, g, 0.9f, 0.5f);
+			}
+			if (act.type == BOSS_ACT_SHOOT_FIXED_PTS) {
+				for (int fp = 0; fp < act.fixedPointCount; fp++)
+					DrawQuadColor(act.fixedPtsX[fp], act.fixedPtsY[fp], 0.008f, 0.008f, 1.0f, 0.5f, 0.2f, 0.5f);
+			}
+		}
+	}
+
+	// Draw boss sprite/quad
 	if (editorBossTexture)
 		DrawQuadTexCentered(editorBossTexture, cx, cy, hw, hh);
 	else

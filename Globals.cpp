@@ -1,7 +1,7 @@
 #include "Globals.h"
 
 // DirectX
-HWND                    g_hWnd = nullptr;
+HWND g_hWnd = nullptr;
 IDXGISwapChain* swapChain = nullptr;
 ID3D11Device* device = nullptr;
 ID3D11DeviceContext* deviceContext = nullptr;
@@ -75,6 +75,14 @@ int  highScore = 0;
 int  combo = 0;
 bool iFrame = false;
 int  iFrameTimer = 0;
+bool ballInTransit = false;
+int portalTimer = 0;
+float portalExitX = 0.0f;
+float portalExitY = 0.0f;
+float portalExitVelX = 0.0f;
+float portalExitVelY = 0.0f;
+float portalEntranceX = 0.0f;
+float portalEntranceY = 0.0f;
 
 // Projéteis
 bool  projectileActive = false;
@@ -117,6 +125,7 @@ std::vector<Projectile>  projectiles;
 std::vector<Block>       blocks;
 std::vector<Obstacle>    obstacles;
 std::vector<EnemyBullet> enemyBullets;
+std::vector<Portal> portals;
 
 // ==========================================
 // CONFIGS DO EDITOR

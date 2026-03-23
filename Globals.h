@@ -44,7 +44,6 @@ enum GameState {
 	STATE_EDITOR
 };
 
-// --- Structs existentes ---
 struct ColorConstantBuffer {
 	DirectX::XMFLOAT4 color;
 };
@@ -79,8 +78,6 @@ struct VertexMenu {
 struct EnemyBullet {
 	float x, y, vx, vy, size; bool active;
 };
-
-// --- Novos Structs ---
 
 struct DropConfig {
 	bool  hasDrop;
@@ -167,6 +164,12 @@ struct StageStartConfig {
 	float ballStartVelX, ballStartVelY;
 };
 
+struct Portal
+{
+	float x, y, width, height;
+	bool active;
+};
+
 // ==========================================
 // DECLARAÇÃO DAS VARIÁVEIS GLOBAIS (extern)
 // ==========================================
@@ -248,6 +251,12 @@ extern int   highScore;
 extern int   combo;
 extern bool  iFrame;
 extern int   iFrameTimer;
+extern bool ballInTransit;
+extern int portalTimer;
+extern float portalExitX, portalExitY;
+extern float portalExitVelX, portalExitVelY;
+float portalEntranceX = 0.0f;
+float portalEntranceY = 0.0f;
 
 // Projéteis
 extern bool  projectileActive;
@@ -290,6 +299,7 @@ extern std::vector<Projectile>  projectiles;
 extern std::vector<Block>       blocks;
 extern std::vector<Obstacle>    obstacles;
 extern std::vector<EnemyBullet> enemyBullets;
+extern std::vector<Portal> portals;
 
 // Configs do editor (existentes)
 extern ObstacleConfig editorObstacleConfig;

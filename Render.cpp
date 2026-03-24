@@ -207,6 +207,17 @@
 			deviceContext->UpdateSubresource(forceFieldBuffer, 0, nullptr, fanVerts.data(), 0, 0); deviceContext->IASetVertexBuffers(0, 1, &forceFieldBuffer, &stride, &offset); deviceContext->Draw(static_cast<UINT>(fanVerts.size()), 0);
 		}
 
+		if (ballInTransit && (portalTimer % 10 < 5))
+		{
+			// Exibe qual o portal de saída
+			spriteBatch -> Begin();
+
+			float pX = (portalExitX + 1.0f) * 400.0f;
+			float pY = (1.0f - portalExitY) * 300.0f;
+
+			spriteBatch->End();
+		}
+
 		if (dashActive)
 		{
 			deviceContext->PSSetShader(pixelShaderProjectile, nullptr, 0); float shieldWidth = 0.25f; float shieldHeight = 0.15f; float shieldY = paddleY;

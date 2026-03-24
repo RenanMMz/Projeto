@@ -321,22 +321,21 @@ void HandlePortals()
 			ballVelX = portalExitVelX;
 			ballVelY = portalExitVelY;
 		}
-		return; //	Skip normal physics for this frame
+		return;
 	}
 
-	// Phase 2: Collision Detection
+	// para cada portal
 	for (auto& p : portals)
 	{
 		if (!p.active) continue;
 
-		// Using simple AABB or Circle-Rect collision
+		// aabb para colisão com portal
 		if (ballX + ballSize > p.x && ballX - ballSize < p.x + p.width &&
 			ballY + ballSize > p.y && ballY - ballSize < p.y + p.height)
 		{
 			ballInTransit = true;
-			portalTimer = 40; // Approx 0.6 seconds at 60fps
+			portalTimer = 60;
 
-			// Gather ALL active portals (including the one we just entered)
 			std::vector<Portal*> activeTargets;
 			for (auto& target : portals)
 			{
@@ -346,27 +345,25 @@ void HandlePortals()
 				}
 			}
 
-			// Pick a random portal from the list
+			// portal de saída aleatório
 			int randomIndex = rand() % activeTargets.size();
 			Portal* exitPortal = activeTargets[randomIndex];
 
-			// Phase 3: Randomized Exit Velocity
-			// We maintain the ball's current speed but change the direction
+			// velocidade aleatória - Ajustar aqui futuramente pq eu zerei a velocidade acima, pensar em outra fórmula
 			float currentSpeed = sqrt(ballVelX * ballVelX + ballVelY * ballVelY);
-			if (currentSpeed < 0.01f) currentSpeed = 0.02f; // Safety speed
+			if (currentSpeed < 0.01f) currentSpeed = 0.02f; // velocidade mínima - Adicionar velocidade máxima
 
-			// Random angle in radians (0 to 360 degrees)
+			// ângulo aleatório
 			float randomAngle = (float)(rand() % 360) * (3.14159f / 180.0f);
 
 			portalExitVelX = cos(randomAngle) * currentSpeed;
 			portalExitVelY = sin(randomAngle) * currentSpeed;
 
-			// Set exit position (center of the chosen portal)
+			// posição de saída (meio do portal de saída)
 			portalExitX = exitPortal->x + (exitPortal->width / 2.0f);
 			portalExitY = exitPortal->y + (exitPortal->height / 2.0f);
 
-			// Safety: Push the ball slightly outside the portal in the exit direction
-			// so it doesn't immediately re-trigger the portal on the next frame
+			// empurra a bola para fora do portal para evitar imediatamente entrar no portal novamente
 			portalExitX += (portalExitVelX * 2.0f);
 			portalExitY += (portalExitVelY * 2.0f);
 

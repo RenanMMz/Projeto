@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 
+#include <wrl/client.h>
 #include <DDSTextureLoader.h>
 #include <WICTextureLoader.h>
 #include <SpriteBatch.h>
@@ -201,6 +202,7 @@ extern ID3D11Buffer* forceFieldBuffer;
 extern ID3D11Buffer* dashShieldBuffer;
 extern ID3D11Buffer* blockColorBuffer;
 extern ID3D11Buffer* enemyBulletBuffer;
+extern ID3D11Buffer* portalBuffer;
 
 // Pixel Shaders
 extern ID3D11PixelShader* pixelShaderObstacle;
@@ -255,8 +257,8 @@ extern bool ballInTransit;
 extern int portalTimer;
 extern float portalExitX, portalExitY;
 extern float portalExitVelX, portalExitVelY;
-float portalEntranceX = 0.0f;
-float portalEntranceY = 0.0f;
+extern float portalEntranceX;
+extern float portalEntranceY;
 
 // Projéteis
 extern bool  projectileActive;
@@ -316,3 +318,8 @@ extern BallSpriteConfig   editorBallConfig;
 extern BombConfig         editorBombConfig;
 extern MenuConfig         editorMenuConfig;
 extern StageStartConfig   editorStageConfig;
+
+// Portal
+extern Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> portalTex;
+
+extern std::unique_ptr<DirectX::SpriteBatch> spriteBatch;

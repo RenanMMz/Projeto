@@ -9,6 +9,7 @@ ID3D11RenderTargetView* renderTargetView = nullptr;
 ID3D11VertexShader* vertexShader = nullptr;
 ID3D11InputLayout* inputLayout = nullptr;
 ID3D11RasterizerState* rasterState = nullptr;
+std::unique_ptr<DirectX::SpriteBatch> spriteBatch = nullptr;
 
 // Shaders texturizados
 ID3D11VertexShader* vertexShaderTextured = nullptr;
@@ -27,6 +28,7 @@ ID3D11Buffer* dashShieldBuffer = nullptr;
 ID3D11Buffer* blockColorBuffer = nullptr;
 ID3D11Buffer* enemyBulletBuffer = nullptr;
 ID3D11Buffer* paddleVertexBuffer = nullptr;
+ID3D11Buffer* portalBuffer = nullptr;
 
 // Pixel Shaders
 ID3D11PixelShader* pixelShaderObstacle = nullptr;
@@ -75,6 +77,10 @@ int  highScore = 0;
 int  combo = 0;
 bool iFrame = false;
 int  iFrameTimer = 0;
+
+// Portal
+Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> portalTex = nullptr;
+
 bool ballInTransit = false;
 int portalTimer = 0;
 float portalExitX = 0.0f;

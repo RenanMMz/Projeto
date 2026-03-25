@@ -8,3 +8,4 @@ void AddBlocks(float x, float y, float width, float height, int hits, int patter
 void AddObstacles(float x, float y, float width, float height);
 void LoadLevel(const char* filename);
 void InitStage(int stageSelected);
+void AddPortal(float x, float y, float width, float height);

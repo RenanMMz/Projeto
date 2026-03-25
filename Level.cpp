@@ -5,6 +5,7 @@ void ClearLevel() {
     obstacles.clear();
     projectiles.clear();
     enemyBullets.clear();
+    portals.clear();
     blocksRemaining = 0;
 }
 
@@ -24,6 +25,12 @@ void SaveLevel(const char* filename) {
         }
         file.close();
     }
+}
+
+void AddPortal(float x, float y, float width, float height) {
+    Portal p;
+    p.x = x; p.y = y; p.width = width; p.height = height; p.active = true;
+    portals.push_back(p);
 }
 
 void AddBlocks(float x, float y, float width, float height, int hits, int pattern, int count) {
@@ -74,6 +81,13 @@ void LoadLevel(const char* filename) {
                 float x, y, w, h;
                 ss >> x >> y >> w >> h;
                 AddObstacles(x, y, w, h);
+            }
+            else if (type == 'T') { // P de Portal já existe, então vai ser T de TP
+
+                float x, y, w, h;
+                ss >> x >> y >> w >> h;
+                AddPortal(x, y, w, h);
+
             }
         }
         file.close();

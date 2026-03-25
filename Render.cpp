@@ -61,6 +61,15 @@
 		D3D11_BUFFER_DESC bdBlockColor = {}; bdBlockColor.Usage = D3D11_USAGE_DEFAULT; bdBlockColor.ByteWidth = sizeof(XMFLOAT4); bdBlockColor.BindFlags = D3D11_BIND_CONSTANT_BUFFER; hr = device->CreateBuffer(&bdBlockColor, nullptr, &blockColorBuffer);
 		D3D11_BUFFER_DESC bdObstacle = {}; bdObstacle.Usage = D3D11_USAGE_DEFAULT; bdObstacle.ByteWidth = sizeof(Vertex) * 6; bdObstacle.BindFlags = D3D11_BIND_VERTEX_BUFFER; hr = device->CreateBuffer(&bdObstacle, nullptr, &obstacleBuffer);
 		D3D11_BUFFER_DESC bdBullet = {}; bdBullet.Usage = D3D11_USAGE_DEFAULT; bdBullet.ByteWidth = sizeof(Vertex) * 6; bdBullet.BindFlags = D3D11_BIND_VERTEX_BUFFER; hr = device->CreateBuffer(&bdBullet, nullptr, &enemyBulletBuffer);
+		D3D11_BUFFER_DESC bdPortal = {}; bdPortal.Usage = D3D11_USAGE_DEFAULT; bdPortal.ByteWidth = sizeof(Vertex) * 6;	bdPortal.BindFlags = D3D11_BIND_VERTEX_BUFFER; hr = device->CreateBuffer(&bdPortal, nullptr, &portalBuffer);
+
+		hr = DirectX::CreateWICTextureFromFile(device, L"portal.png", nullptr, portalTex.GetAddressOf());
+		if (FAILED(hr)) {
+			MessageBoxA(nullptr, "Failed to load texture: portal.png", "Error", MB_OK | MB_ICONERROR);
+			return false;
+		}
+
+		spriteBatch = std::make_unique<SpriteBatch>(deviceContext);
 
 		life = 3; return true;
 	}
@@ -185,6 +194,25 @@
 			deviceContext->UpdateSubresource(blockVertexBuffer, 0, nullptr, vertices, 0, 0); deviceContext->Draw(6, 0);
 		}
 
+		deviceContext->PSSetShader(pixelShaderObstacle, nullptr, 0);
+		deviceContext->IASetVertexBuffers(0, 1, &portalBuffer, &stride, &offset);
+		for (auto& p : portals)
+		{
+			if (!p.active) continue;
+
+			Vertex vertices[] = {
+				{p.x - p.width / 2, p.y + p.height, 0.0f},
+				{p.x - p.width / 2, p.y, 0.0f},
+				{p.x + p.width / 2, p.y, 0.0f},
+				{p.x - p.width / 2, p.y + p.height, 0.0f},
+				{p.x + p.width / 2, p.y, 0.0f},
+				{p.x + p.width / 2, p.y + p.height, 0.0f}
+			};
+
+			deviceContext->UpdateSubresource(portalBuffer, 0, nullptr, vertices, 0, 0);
+			deviceContext->Draw(6, 0);
+		}
+
 		deviceContext->PSSetShader(pixelShaderEnemyBullet, nullptr, 0);
 		for (auto& bullet : enemyBullets)
 		{
@@ -215,6 +243,10 @@
 			float pX = (portalExitX + 1.0f) * 400.0f;
 			float pY = (1.0f - portalExitY) * 300.0f;
 
+			if (portalTex) {
+				spriteBatch->Draw(portalTex.Get(), XMFLOAT2(pX, pY), nullptr, Colors::White);
+			}
+
 			spriteBatch->End();
 		}
 
@@ -228,10 +260,12 @@
 
 	void CleanD3D()
 	{
+		spriteBatch.reset();
 		if (swapChain) swapChain->Release(); if (renderTargetView) renderTargetView->Release(); if (deviceContext) deviceContext->Release(); if (device) device->Release();
 		if (paddleVertexBuffer) paddleVertexBuffer->Release();
 		if (vertexBuffer) vertexBuffer->Release(); if (vertexShader) vertexShader->Release(); if (pixelShader) pixelShader->Release(); if (inputLayout) inputLayout->Release();
 		if (rasterState) rasterState->Release(); if (pixelShaderBlock) pixelShaderBlock->Release(); if (blockColorBuffer) blockColorBuffer->Release();
 		if (blockVertexBuffer) blockVertexBuffer->Release(); if (ballVertexBuffer) ballVertexBuffer->Release(); if (projectileBuffer) projectileBuffer->Release();
 		if (forceFieldBuffer) forceFieldBuffer->Release(); if (dashShieldBuffer) dashShieldBuffer->Release(); if (obstacleBuffer) obstacleBuffer->Release(); if (enemyBulletBuffer) enemyBulletBuffer->Release();
+		if (portalBuffer) portalBuffer->Release();
 	}

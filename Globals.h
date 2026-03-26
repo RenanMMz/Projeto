@@ -321,5 +321,6 @@ extern StageStartConfig   editorStageConfig;
 
 // Portal
 extern Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> portalTex;
-
 extern std::unique_ptr<DirectX::SpriteBatch> spriteBatch;
+extern float portalTexWidth;
+extern float portalTexHeight;

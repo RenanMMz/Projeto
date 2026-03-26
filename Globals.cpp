@@ -89,6 +89,8 @@ float portalExitVelX = 0.0f;
 float portalExitVelY = 0.0f;
 float portalEntranceX = 0.0f;
 float portalEntranceY = 0.0f;
+float portalTexWidth = 0.0f;
+float portalTexHeight = 0.0f;
 
 // Projéteis
 bool  projectileActive = false;

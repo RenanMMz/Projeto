@@ -43,6 +43,7 @@
 		hr = device->CreatePixelShader(psBlobBlock->GetBufferPointer(), psBlobBlock->GetBufferSize(), nullptr, &pixelShaderBlock);
 		hr = device->CreatePixelShader(psBlobObstacle->GetBufferPointer(), psBlobObstacle->GetBufferSize(), nullptr, &pixelShaderObstacle);
 		hr = device->CreatePixelShader(psBlobBullet->GetBufferPointer(), psBlobBullet->GetBufferSize(), nullptr, &pixelShaderEnemyBullet);
+		
 
 		D3D11_INPUT_ELEMENT_DESC layout[] = { {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0} };
 		hr = device->CreateInputLayout(layout, 1, vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), &inputLayout);
@@ -67,6 +68,18 @@
 		if (FAILED(hr)) {
 			MessageBoxA(nullptr, "Failed to load texture: portal.png", "Error", MB_OK | MB_ICONERROR);
 			return false;
+		}
+
+		Microsoft::WRL::ComPtr<ID3D11Resource> resource;
+		portalTex->GetResource(resource.GetAddressOf());
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> texture2D;
+
+		if (SUCCEEDED(resource.As(&texture2D)))
+		{
+			D3D11_TEXTURE2D_DESC desc;
+			texture2D->GetDesc(&desc);
+			portalTexWidth = static_cast<float>(desc.Width);
+			portalTexHeight = static_cast<float>(desc.Height);
 		}
 
 		spriteBatch = std::make_unique<SpriteBatch>(deviceContext);
@@ -158,11 +171,18 @@
 	}
 
 	void RenderGameplay()
-	{
+	{;
+
 		float clearColor[4] = { 0.2f, 0.2f, 0.6f, 1.0f }; deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
+	
+		deviceContext->RSSetState(rasterState);
+		deviceContext->OMSetBlendState(nullptr, nullptr, 0xffffffff);
+		deviceContext->OMSetDepthStencilState(nullptr, 0);
+
 		UINT stride = sizeof(Vertex); UINT offset = 0; deviceContext->IASetInputLayout(inputLayout);
 		deviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset); deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		deviceContext->VSSetShader(vertexShader, nullptr, 0); deviceContext->PSSetShader(pixelShader, nullptr, 0);
+
 
 		if (paddleVisible)
 		{
@@ -235,20 +255,48 @@
 			deviceContext->UpdateSubresource(forceFieldBuffer, 0, nullptr, fanVerts.data(), 0, 0); deviceContext->IASetVertexBuffers(0, 1, &forceFieldBuffer, &stride, &offset); deviceContext->Draw(static_cast<UINT>(fanVerts.size()), 0);
 		}
 
+		spriteBatch->Begin();
+
+		for (auto& p : portals)
+		{
+			if (!p.active) continue;
+
+			float screenX = (p.x + 1.0f) * 400.0f;
+			float screenY = (1.0f - p.y) * 300.0f;
+
+			DirectX::XMFLOAT2 pos (screenX, screenY);
+			DirectX::XMFLOAT2 origin(portalTexWidth / 2.0f, portalTexHeight / 2.0f);
+
+			float targetPixelsX = p.width * 400.0f;
+			float targetPixelsY = p.height * 300.0f;
+			DirectX::XMFLOAT2 scale(targetPixelsX / portalTexWidth, targetPixelsY / portalTexHeight);
+			if (portalTex)
+			{
+				spriteBatch->Draw(portalTex.Get(), pos, nullptr, DirectX::Colors::White, 0.0f, origin, scale, DirectX::SpriteEffects_None, 0.0f);
+			}
+		}
+
 		if (ballInTransit && (portalTimer % 10 < 5))
 		{
 			// Exibe qual o portal de saída
-			spriteBatch -> Begin();
 
-			float pX = (portalExitX + 1.0f) * 400.0f;
-			float pY = (1.0f - portalExitY) * 300.0f;
+			float exitSX = (portalExitX + 1.0f) * 400.0f;
+			float exitSY = (1.0f - portalExitY) * 300.0f;
 
-			if (portalTex) {
-				spriteBatch->Draw(portalTex.Get(), XMFLOAT2(pX, pY), nullptr, Colors::White);
+			DirectX::XMFLOAT2 exitPos(exitSX, exitSY);
+			DirectX::XMFLOAT2 exitOrigin(128.0f, 128.0f);
+			float targetPixelsX = (portals.empty() ? 0.1f : portals[0].width) * 400.0f;
+			float targetPixelsY = (portals.empty() ? 0.1f : portals[0].height) * 300.0f;
+			DirectX::XMFLOAT2 exitScale(targetPixelsX / portalTexWidth, targetPixelsY / portalTexHeight);
+
+			if (portalTex)
+			{
+				spriteBatch->Draw(portalTex.Get(), exitPos, nullptr, DirectX::Colors::Yellow, 0.0f, exitOrigin, exitScale, DirectX::SpriteEffects_None, 0.0f);
 			}
 
-			spriteBatch->End();
 		}
+
+		spriteBatch->End();
 
 		if (dashActive)
 		{

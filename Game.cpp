@@ -153,6 +153,27 @@ void UpdateBall()
 		}
 	}
 
+	for (auto& p : portals)
+	{
+		if (!p.active) continue;
+
+		float pLeft = p.x - p.width / 2.0f;
+		float pRight = p.x + p.width / 2.0f;
+		float pBottom = p.y;
+		float pTop = p.y + p.height;
+
+		if (ballX + ballSize > pLeft && ballX - ballSize < pRight &&
+			ballY + ballSize > pBottom && ballY - ballSize < pTop)
+		{
+
+			// Timer
+			ballInTransit = true;
+			portalTimer = 60;
+
+			break;
+		}
+	}
+
 	for (auto& enemyBullet : enemyBullets)
 	{
 		if (!enemyBullet.active) continue;

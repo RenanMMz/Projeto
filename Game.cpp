@@ -88,8 +88,60 @@ void UpdatePaddle()
 	}
 }
 
-void UpdateBall()
-{
+	void UpdateBall()
+	{
+		if (portalCooldown > 0) portalCooldown--;
+		// Em caso de a bola estar no teleporte todas as outras físicas são ignoradas
+		if (ballInTransit)
+		{
+			portalTimer--;
+			if (portalTimer <= 0)
+			{
+
+				// Portal aleatório dentre os existentes
+				if (!portals.empty())
+				{
+					int index = rand() % portals.size();
+					ballX = portals[index].x;
+					ballY = portals[index].y;
+
+				}
+				//angulo aleatório
+				float randomAngle = ((rand() % 100)) * 3.14159f;
+
+				//velocidade de saída
+				float speed = 0.02f;
+				ballVelY = cosf(randomAngle) * speed;
+				ballVelX = sinf(randomAngle) * speed;
+
+				ballInTransit = false;
+				portalCooldown = 20;
+
+			}
+			return;
+		}
+
+		for (auto& p : portals)
+		{
+			if (!p.active) continue;
+			if (p.active && portalCooldown <= 0)
+			// aabb para colisão com portal
+			if (ballX + ballSize > p.x && ballX - ballSize < p.x + p.width &&
+				ballY + ballSize > p.y && ballY - ballSize < p.y + p.height)
+			{
+				std::vector<Portal*> activeTargets;
+				for (auto& target : portals)
+				{
+					if (target.active)
+					{
+						activeTargets.push_back(&target);
+					}
+				}
+			ballInTransit = true;
+			portalTimer = 60;
+			}
+		}
+
 	ballVelY -= 0.0007f;
 	if (ballX - ballSize < -0.9f)
 	{
@@ -344,53 +396,7 @@ void HandlePortals()
 		}
 		return;
 	}
-
-	// para cada portal
-	for (auto& p : portals)
-	{
-		if (!p.active) continue;
-
-		// aabb para colisão com portal
-		if (ballX + ballSize > p.x && ballX - ballSize < p.x + p.width &&
-			ballY + ballSize > p.y && ballY - ballSize < p.y + p.height)
-		{
-			ballInTransit = true;
-			portalTimer = 60;
-
-			std::vector<Portal*> activeTargets;
-			for (auto& target : portals)
-			{
-				if (target.active)
-				{
-					activeTargets.push_back(&target);
-				}
-			}
-
-			// portal de saída aleatório
-			int randomIndex = rand() % activeTargets.size();
-			Portal* exitPortal = activeTargets[randomIndex];
-
-			// velocidade aleatória - Ajustar aqui futuramente pq eu zerei a velocidade acima, pensar em outra fórmula
-			float currentSpeed = sqrt(ballVelX * ballVelX + ballVelY * ballVelY);
-			if (currentSpeed < 0.01f) currentSpeed = 0.02f; // velocidade mínima - Adicionar velocidade máxima
-
-			// ângulo aleatório
-			float randomAngle = (float)(rand() % 360) * (3.14159f / 180.0f);
-
-			portalExitVelX = cos(randomAngle) * currentSpeed;
-			portalExitVelY = sin(randomAngle) * currentSpeed;
-
-			// posição de saída (meio do portal de saída)
-			portalExitX = exitPortal->x + (exitPortal->width / 2.0f);
-			portalExitY = exitPortal->y + (exitPortal->height / 2.0f);
-
-			// empurra a bola para fora do portal para evitar imediatamente entrar no portal novamente
-			portalExitX += (portalExitVelX * 2.0f);
-			portalExitY += (portalExitVelY * 2.0f);
-
-			break;
-		}
-	}
+	
 }
 
 void UpdateGameplay()

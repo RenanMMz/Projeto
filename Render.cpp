@@ -262,7 +262,8 @@
 			if (!p.active) continue;
 
 			float screenX = (p.x + 1.0f) * 400.0f;
-			float screenY = (1.0f - p.y) * 300.0f;
+			float centerY = p.y + (p.height / 2.0f); // sem esse cálculo o gráfico do portal renderizaria na metade de baixo do objeto portal, então estou adicionando metade da altura do portal ao local de renderização.
+			float screenY = (1.0f - centerY) * 300.0f;
 
 			DirectX::XMFLOAT2 pos (screenX, screenY);
 			DirectX::XMFLOAT2 origin(portalTexWidth / 2.0f, portalTexHeight / 2.0f);
@@ -284,7 +285,7 @@
 			float exitSY = (1.0f - portalExitY) * 300.0f;
 
 			DirectX::XMFLOAT2 exitPos(exitSX, exitSY);
-			DirectX::XMFLOAT2 exitOrigin(128.0f, 128.0f);
+			DirectX::XMFLOAT2 exitOrigin(portalTexWidth / 2.0f, portalTexHeight / 2.0f);
 			float targetPixelsX = (portals.empty() ? 0.1f : portals[0].width) * 400.0f;
 			float targetPixelsY = (portals.empty() ? 0.1f : portals[0].height) * 300.0f;
 			DirectX::XMFLOAT2 exitScale(targetPixelsX / portalTexWidth, targetPixelsY / portalTexHeight);

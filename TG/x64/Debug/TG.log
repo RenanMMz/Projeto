@@ -1,9 +1,2 @@
-﻿  Editor.cpp
-  Game.cpp
-  Globals.cpp
-  Level.cpp
-  Math.cpp
-  Render.cpp
-  main.cpp
-  Gerando Código...
+﻿  Game.cpp
   TG.vcxproj -> C:\Users\Paula\source\repos\Projeto1\x64\Debug\TG.exe

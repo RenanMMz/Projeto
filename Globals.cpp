@@ -91,6 +91,7 @@ float portalEntranceX = 0.0f;
 float portalEntranceY = 0.0f;
 float portalTexWidth = 0.0f;
 float portalTexHeight = 0.0f;
+int portalCooldown = 0;
 
 // Projéteis
 bool  projectileActive = false;

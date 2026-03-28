@@ -149,6 +149,12 @@
 	void RenderMenu()
 	{
 		float clearColor[4] = { 0.05f, 0.05f, 0.1f, 1.0f }; deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
+		
+		// reset state to manual geometry instead of 2d sprites so menu buttons work, should be temporary until the sprites get added to the whole game and replace the geometry
+		deviceContext->RSSetState(rasterState);
+		deviceContext->OMSetBlendState(nullptr, nullptr, 0xffffffff);
+		deviceContext->OMSetDepthStencilState(nullptr, 0);
+		
 		float startY = 0.2f; float spacing = 0.3f; float buttonWidth = 0.8f; float buttonHeight = 0.2f;
 		XMFLOAT4 colorNormal = XMFLOAT4(0.3f, 0.3f, 0.8f, 1.0f); XMFLOAT4 colorSelected = XMFLOAT4(1.0f, 1.0f, 0.3f, 1.0f);
 		for (int i = 0; i < mainMenuCount; i++)

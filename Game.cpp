@@ -107,7 +107,7 @@ void UpdatePaddle()
 
 				}
 				//angulo aleatório
-				float randomAngle = ((rand() % 100)) * 3.14159f;
+				float randomAngle = ((rand() % 360)) * (2 * 3.14159f / 180.0f);
 
 				//velocidade de saída
 				float speed = 0.02f;
@@ -124,24 +124,32 @@ void UpdatePaddle()
 		for (auto& p : portals)
 		{
 			if (!p.active) continue;
-			if (p.active && portalCooldown <= 0)
+			if (p.active && portalCooldown <= 0){
 			// aabb para colisão com portal
-			if (ballX + ballSize > p.x && ballX - ballSize < p.x + p.width &&
-				ballY + ballSize > p.y && ballY - ballSize < p.y + p.height)
-			{
-				std::vector<Portal*> activeTargets;
-				for (auto& target : portals)
+
+				float pLeft = p.x - p.width / 2.0f;
+				float pRight = p.x + p.width / 2.0f;
+				float pBottom = p.y;
+				float pTop = p.y + p.height;
+
+				if (ballX + ballSize > pLeft && ballX - ballSize < pRight &&
+					ballY + ballSize > pBottom && ballY - ballSize < pTop)
 				{
-					if (target.active)
+					std::vector<Portal*> activeTargets;
+					for (auto& target : portals)
 					{
-						activeTargets.push_back(&target);
+						if (target.active)
+						{
+							activeTargets.push_back(&target);
+						}
 					}
+				ballInTransit = true;
+				portalTimer = 60;
+				break;
 				}
-			ballInTransit = true;
-			portalTimer = 60;
 			}
 		}
-
+	
 	ballVelY -= 0.0007f;
 	if (ballX - ballSize < -0.9f)
 	{
@@ -203,28 +211,7 @@ void UpdatePaddle()
 				break;
 			}
 		}
-	}
-
-	for (auto& p : portals)
-	{
-		if (!p.active) continue;
-
-		float pLeft = p.x - p.width / 2.0f;
-		float pRight = p.x + p.width / 2.0f;
-		float pBottom = p.y;
-		float pTop = p.y + p.height;
-
-		if (ballX + ballSize > pLeft && ballX - ballSize < pRight &&
-			ballY + ballSize > pBottom && ballY - ballSize < pTop)
-		{
-
-			// Timer
-			ballInTransit = true;
-			portalTimer = 60;
-
-			break;
-		}
-	}
+	}	
 
 	for (auto& enemyBullet : enemyBullets)
 	{

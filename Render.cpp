@@ -307,9 +307,30 @@
 
 		if (dashActive)
 		{
-			deviceContext->PSSetShader(pixelShaderProjectile, nullptr, 0); float shieldWidth = 0.25f; float shieldHeight = 0.15f; float shieldY = paddleY;
-			Vertex dashShieldVerts[] = { {paddleX - shieldWidth / 2, shieldY + shieldHeight, 0.0f}, {paddleX - shieldWidth / 2, shieldY, 0.0f}, {paddleX + shieldWidth / 2, shieldY, 0.0f}, {paddleX - shieldWidth / 2, shieldY + shieldHeight, 0.0f}, {paddleX + shieldWidth / 2, shieldY, 0.0f}, {paddleX + shieldWidth / 2, shieldY + shieldHeight, 0.0f} };
-			deviceContext->UpdateSubresource(dashShieldBuffer, 0, nullptr, dashShieldVerts, 0, 0); deviceContext->IASetVertexBuffers(0, 1, &dashShieldBuffer, &stride, &offset); deviceContext->Draw(6, 0);
+			deviceContext->VSSetShader(vertexShader, nullptr, 0);
+			deviceContext->PSSetShader(pixelShaderProjectile, nullptr, 0);
+			deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+			float shieldWidth = 0.25f;
+			float shieldHeight = 0.15f;
+			float shieldY = paddleY;
+
+			Vertex dashShieldVerts[] = { 
+				{paddleX - shieldWidth / 2, shieldY + shieldHeight, 0.0f}, 
+				{paddleX - shieldWidth / 2, shieldY, 0.0f}, 
+				{paddleX + shieldWidth / 2, shieldY, 0.0f}, 
+				{paddleX - shieldWidth / 2, shieldY + shieldHeight, 0.0f}, 
+				{paddleX + shieldWidth / 2, shieldY, 0.0f}, 
+				{paddleX + shieldWidth / 2, shieldY + shieldHeight, 0.0f} 
+			};
+			
+			UINT stride = sizeof(Vertex);
+			UINT offset = 0;
+
+			deviceContext->UpdateSubresource(dashShieldBuffer, 0, nullptr, dashShieldVerts, 0, 0);
+			deviceContext->IASetVertexBuffers(0, 1, &dashShieldBuffer, &stride, &offset);
+			deviceContext->Draw(6, 0);
+
 		}
 	}
 

@@ -186,6 +186,66 @@ void UpdatePaddle()
 
 void UpdateBall()
 {
+    if (portalCooldown > 0) portalCooldown--;
+    // Em caso de a bola estar no teleporte todas as outras físicas são ignoradas
+    if (ballInTransit)
+    {
+        portalTimer--;
+        if (portalTimer <= 0)
+        {
+
+            // Portal aleatório dentre os existentes
+            if (!portals.empty())
+            {
+                int index = rand() % portals.size();
+                ballX = portals[index].x;
+                ballY = portals[index].y;
+
+            }
+            //angulo aleatório
+            float randomAngle = ((rand() % 360)) * (2 * 3.14159f / 180.0f);
+
+            //velocidade de saída
+            float speed = 0.02f;
+            ballVelY = cosf(randomAngle) * speed;
+            ballVelX = sinf(randomAngle) * speed;
+
+            ballInTransit = false;
+            portalCooldown = 20;
+
+        }
+        return;
+    }
+
+    for (auto& p : portals)
+    {
+        if (!p.active) continue;
+        if (p.active && portalCooldown <= 0)
+        {
+            // aabb para colisão com portal
+
+            float pLeft = p.x - p.width / 2.0f;
+            float pRight = p.x + p.width / 2.0f;
+            float pBottom = p.y;
+            float pTop = p.y + p.height;
+
+            if (ballX + ballSize > pLeft && ballX - ballSize < pRight &&
+                ballY + ballSize > pBottom && ballY - ballSize < pTop)
+            {
+                std::vector<Portal*> activeTargets;
+                for (auto& target : portals)
+                {
+                    if (target.active)
+                    {
+                        activeTargets.push_back(&target);
+                    }
+                }
+                ballInTransit = true;
+                portalTimer = 60;
+                break;
+            }
+        }
+    }
     ballVelY -= 0.0007f;
 
     if (ballX - ballSize < -0.9f) {
@@ -539,6 +599,31 @@ void UpdateDash()
         dashActive = false; paddleHeight = paddleHeightNormal;
     }
     paddleX += dashDir * dashSpeed;
+}
+
+void HandlePortals()
+{
+    if (ballInTransit)
+    {
+        portalTimer--;
+
+        // Para a bolinha no portal de entrada até a hora de teleportar no portal de saída
+        ballVelX = 0;
+        ballVelY = 0;
+        ballX = portalEntranceX;
+        ballY = portalEntranceY;
+
+        if (portalTimer <= 0)
+        {
+            ballInTransit = false;
+            ballX = portalExitX;
+            ballY = portalExitY;
+            ballVelX = portalExitVelX;
+            ballVelY = portalExitVelY;
+        }
+        return;
+    }
+
 }
 
 // ==========================================

@@ -15,3 +15,4 @@ bool SaveGameProject(const char* fullPath);
 bool LoadGameProject(const char* fullPath);
 void ApplyProjectConfigs();
 void PopulateGameplayFromStageObjects();
+void AddPortal(float x, float y, float width, float height);

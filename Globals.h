@@ -321,6 +321,12 @@ struct StageEditorConfig {
 	char  bgTexturePath[256];
 };
 
+struct Portal
+{
+	float x, y, width, height;
+	bool active;
+};
+
 struct StageStartConfig {
 	int   stageNumber;
 	float ballStartX, ballStartY;
@@ -429,6 +435,12 @@ extern bool  iFrame;
 extern int   iFrameTimer;
 extern int   damageEffectTimer;
 extern int   damageBlinkCounter;
+extern bool ballInTransit;
+extern int portalTimer;
+extern float portalExitX, portalExitY;
+extern float portalExitVelX, portalExitVelY;
+extern float portalEntranceX;
+extern float portalEntranceY;
 
 extern bool  projectileActive;
 extern float projectileX, projectileY, projectileSize, projectileSpeed;
@@ -460,6 +472,7 @@ extern std::vector<Block>        blocks;
 extern std::vector<Obstacle>     obstacles;
 extern std::vector<EnemyBullet>  enemyBullets;
 extern std::vector<DroppedItem>  droppedItems;
+extern std::vector<Portal> portals;
 
 extern ObstacleConfig      editorObstacleConfig;
 extern char                editorObstacleNameInput[64];
@@ -475,6 +488,12 @@ extern BombConfig          editorBombConfig;
 extern MenuConfig          editorMenuConfig;
 extern StageStartConfig    editorStageConfig;
 extern StageEditorConfig   editorStageEditorConfig;
+
+// Portal
+extern std::unique_ptr<DirectX::SpriteBatch> spriteBatch;
+extern float portalTexWidth;
+extern float portalTexHeight;
+extern int portalCooldown;
 
 extern std::vector<PlacedObject> stageObjects;
 // Projeto ativo

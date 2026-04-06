@@ -125,6 +125,13 @@ void SaveLevel(const char* filename)
 	file.close();
 }
 
+void AddPortal(float x, float y, float width, float height)
+{
+	Portal p;
+	p.x = x; p.y = y; p.width = width; p.height = height; p.active = true;
+	portals.push_back(p);
+}
+
 void LoadLevel(const char* filename)
 {
 	ClearLevel();
@@ -178,6 +185,13 @@ void LoadLevel(const char* filename)
 		else if (type == 'O') {
 			float x, y, w, h; ss >> x >> y >> w >> h;
 			AddObstacles(x, y, w, h);
+		}
+		else if (type == 'T') { // P de Portal já existe para os , então vai ser T de TP
+
+			float x, y, w, h;
+			ss >> x >> y >> w >> h;
+			AddPortal(x, y, w, h);
+
 		}
 	}
 	file.close();

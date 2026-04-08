@@ -7,3 +7,6 @@
 *.idb
 *.pdb
 *.exe
+*.sln
+/.gitignore
+/.gitignore

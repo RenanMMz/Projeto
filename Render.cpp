@@ -431,6 +431,34 @@ void RenderGameplay() {
 		}
 	}
 
+	for (auto& portal : portals) {
+		if (!portal.active) continue;
+		if (portal.textureSRV) {
+			DrawTexturedQuad(portal.textureSRV,
+				portal.x - portal.width / 2, portal.y,
+				portal.x + portal.width / 2, portal.y + portal.height);
+		}
+		else {
+			// Padrão se não tiver textura, ciano
+			Vertex pVerts[] = {
+				{portal.x - portal.width / 2, portal.y + portal.height, 0.0f},
+				{portal.x - portal.width / 2, portal.y, 0.0f},
+				{portal.x + portal.width / 2, portal.y, 0.0f},
+				{portal.x - portal.width / 2, portal.y + portal.height, 0.0f},
+				{portal.x + portal.width / 2, portal.y, 0.0f},
+				{portal.x + portal.width / 2, portal.y + portal.height, 0.0f}
+			};
+			deviceContext->UpdateSubresource(obstacleBuffer, 0, nullptr, pVerts, 0, 0);
+			XMFLOAT4 pColor(0.0f, 1.0f, 1.0f, 1.0f);
+			deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &pColor, 0, 0);
+			deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0);
+			deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer);
+			UINT s = sizeof(Vertex), o = 0;
+			deviceContext->IASetVertexBuffers(0, 1, &obstacleBuffer, &s, &o);
+			deviceContext->Draw(6, 0);
+		}
+	}
+
 	// Balas inimigas
 	deviceContext->PSSetShader(pixelShaderEnemyBullet, nullptr, 0);
 	for (auto& bullet : enemyBullets) {

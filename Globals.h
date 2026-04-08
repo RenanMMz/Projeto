@@ -32,7 +32,8 @@ enum EditorMode {
 	EDITOR_MODE_ENEMY,
 	EDITOR_MODE_BOSS,
 	EDITOR_MODE_BOMB,
-	EDITOR_MODE_MENU
+	EDITOR_MODE_MENU,
+	EDITOR_MODE_PORTAL
 };
 
 enum GameState {
@@ -325,6 +326,7 @@ struct Portal
 {
 	float x, y, width, height;
 	bool active;
+	ID3D11ShaderResourceView* textureSRV;
 };
 
 struct StageStartConfig {

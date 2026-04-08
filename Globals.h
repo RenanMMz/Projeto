@@ -90,7 +90,7 @@ struct Block {
 	int   iFrameBlockTimer;
 	// Aparencia
 	bool  useTexture;
-	ID3D11ShaderResourceView* textureSRV;
+	ID3D11ShaderResourceView* textureSRV = nullptr;
 	float colorR, colorG, colorB, colorA;
 	// Movimentacao
 	EnemyMovType movType;
@@ -110,7 +110,7 @@ struct Obstacle {
 	float x, y, width, height;
 	bool  active;
 	bool  useTexture;
-	ID3D11ShaderResourceView* textureSRV;
+	ID3D11ShaderResourceView* textureSRV = nullptr;
 	float colorR, colorG, colorB, colorA;
 };
 
@@ -326,7 +326,7 @@ struct Portal
 {
 	float x, y, width, height;
 	bool active;
-	ID3D11ShaderResourceView* textureSRV;
+	ID3D11ShaderResourceView* textureSRV = nullptr;
 };
 
 struct StageStartConfig {

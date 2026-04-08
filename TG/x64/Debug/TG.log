@@ -1,16 +1,2 @@
-﻿  Editor.cpp
-  Game.cpp
-  Globals.cpp
-  imgui.cpp
-  imgui_demo.cpp
-  imgui_draw.cpp
-  imgui_impl_dx11.cpp
-  imgui_impl_win32.cpp
-  imgui_tables.cpp
-  imgui_widgets.cpp
-  Level.cpp
-  main.cpp
-  Math.cpp
-  Render.cpp
-  Generating Code...
-  TG.vcxproj -> C:\Users\RenanMMz\source\repos\Projeto\x64\Debug\TG.exe
+﻿  Render.cpp
+  TG.vcxproj -> C:\Users\Paula\source\repos\Projeto1\x64\Debug\TG.exe

@@ -177,7 +177,7 @@ void UpdatePaddle()
         {paddleX + paddleWidth / 2, paddleY,                0.0f},
         {paddleX + paddleWidth / 2, paddleY + paddleHeight, 0.0f}
     };
-    deviceContext->UpdateSubresource(vertexBuffer, 0, nullptr, vertices, 0, 0);
+    deviceContext->UpdateSubresource(paddleVertexBuffer, 0, nullptr, vertices, 0, 0);
 }
 
 // ==========================================
@@ -242,6 +242,9 @@ void UpdateBall()
                 }
                 ballInTransit = true;
                 portalTimer = 60;
+                float halfTimer = portalTimer / 2;
+                ballX = (pLeft + pRight)/   2;
+                ballY = (pTop + pBottom)/ 2;
                 break;
             }
         }

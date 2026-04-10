@@ -369,6 +369,7 @@ extern ID3D11PixelShader* pixelShaderTextured;
 extern ID3D11Buffer* texturedVertexBuffer;
 extern ID3D11SamplerState* samplerState;
 
+extern ID3D11Buffer* paddleVertexBuffer;
 extern ID3D11Buffer* obstacleBuffer;
 extern ID3D11Buffer* vertexBuffer;        // buffer geral (inclui paddle)
 extern ID3D11Buffer* blockVertexBuffer;

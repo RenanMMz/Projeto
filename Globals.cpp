@@ -17,6 +17,7 @@ ID3D11SamplerState* samplerState = nullptr;
 
 ID3D11Buffer* obstacleBuffer = nullptr;
 ID3D11Buffer* vertexBuffer = nullptr;
+ID3D11Buffer* paddleVertexBuffer = nullptr;
 ID3D11Buffer* blockVertexBuffer = nullptr;
 ID3D11Buffer* ballVertexBuffer = nullptr;
 ID3D11Buffer* projectileBuffer = nullptr;
@@ -114,7 +115,7 @@ float       paddleEditMoveSpeed = 0.01f;
 
 float ballX = 0.75f;
 float ballY = -0.5f;
-float ballVelX = 0.000001f;
+float ballVelX = 0.0f;
 float ballVelY = 0.02f;
 float ballSize = 0.03f;
 

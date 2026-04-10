@@ -1,2 +1,3 @@
-﻿  Render.cpp
+﻿  Game.cpp
+C:\Users\Paula\source\repos\Projeto1\Game.cpp(245,33): warning C4244: 'inicializando': conversão de 'int' para 'float', possível perda de dados
   TG.vcxproj -> C:\Users\Paula\source\repos\Projeto1\x64\Debug\TG.exe

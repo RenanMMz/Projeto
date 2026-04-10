@@ -72,8 +72,9 @@ bool InitD3D(HWND hWnd) {
 	Vertex vertices[] = { {-0.12f, -0.7f, 0.0f}, {-0.12f, -0.75f, 0.0f}, {0.12f, -0.75f, 0.0f}, {-0.12f, -0.7f, 0.0f}, {0.12f, -0.75f, 0.0f}, {0.12f, -0.7f, 0.0f} };
 	Vertex ballVertices[6];
 
+	D3D11_BUFFER_DESC bdMenu = {}; bdMenu.Usage = D3D11_USAGE_DEFAULT; bdMenu.ByteWidth = sizeof(Vertex) * _countof(vertices); bdMenu.BindFlags = D3D11_BIND_VERTEX_BUFFER; D3D11_SUBRESOURCE_DATA initMenu = {}; initMenu.pSysMem = vertices; hr = device->CreateBuffer(&bdMenu, &initMenu, &vertexBuffer);
 	D3D11_BUFFER_DESC bdBall = {}; bdBall.Usage = D3D11_USAGE_DEFAULT; bdBall.ByteWidth = sizeof(Vertex) * _countof(ballVertices); bdBall.BindFlags = D3D11_BIND_VERTEX_BUFFER; D3D11_SUBRESOURCE_DATA initBall = {}; initBall.pSysMem = ballVertices; hr = device->CreateBuffer(&bdBall, &initBall, &ballVertexBuffer);
-	D3D11_BUFFER_DESC bdPaddle = {}; bdPaddle.Usage = D3D11_USAGE_DEFAULT; bdPaddle.ByteWidth = sizeof(Vertex) * _countof(vertices); bdPaddle.BindFlags = D3D11_BIND_VERTEX_BUFFER; D3D11_SUBRESOURCE_DATA initPaddle = {}; initPaddle.pSysMem = vertices; hr = device->CreateBuffer(&bdPaddle, &initPaddle, &vertexBuffer);
+	D3D11_BUFFER_DESC bdPaddle = {}; bdPaddle.Usage = D3D11_USAGE_DEFAULT; bdPaddle.ByteWidth = sizeof(Vertex) * _countof(vertices); bdPaddle.BindFlags = D3D11_BIND_VERTEX_BUFFER; D3D11_SUBRESOURCE_DATA initPaddle = {}; initPaddle.pSysMem = vertices; hr = device->CreateBuffer(&bdPaddle, &initPaddle, &paddleVertexBuffer);
 	D3D11_BUFFER_DESC bdShield = {}; bdShield.Usage = D3D11_USAGE_DEFAULT; bdShield.ByteWidth = sizeof(Vertex) * (32 + 2) * 3; bdShield.BindFlags = D3D11_BIND_VERTEX_BUFFER; hr = device->CreateBuffer(&bdShield, nullptr, &forceFieldBuffer);
 	D3D11_BUFFER_DESC bdDashShield = {}; bdDashShield.Usage = D3D11_USAGE_DEFAULT; bdDashShield.ByteWidth = sizeof(Vertex) * _countof(vertices); bdDashShield.BindFlags = D3D11_BIND_VERTEX_BUFFER; hr = device->CreateBuffer(&bdDashShield, nullptr, &dashShieldBuffer);
 	D3D11_BUFFER_DESC bdBlock = {}; bdBlock.Usage = D3D11_USAGE_DEFAULT; bdBlock.ByteWidth = sizeof(Vertex) * 6; bdBlock.BindFlags = D3D11_BIND_VERTEX_BUFFER; hr = device->CreateBuffer(&bdBlock, nullptr, &blockVertexBuffer);
@@ -348,7 +349,7 @@ void RenderGameplay() {
 			deviceContext->PSSetShader(pixelShaderPaddle, nullptr, 0);
 			UINT s = sizeof(Vertex), o = 0;
 			deviceContext->IASetInputLayout(inputLayout);
-			deviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &s, &o);
+			deviceContext->IASetVertexBuffers(0, 1, &paddleVertexBuffer, &s, &o);
 			deviceContext->VSSetShader(vertexShader, nullptr, 0);
 			deviceContext->Draw(6, 0);
 		}
@@ -383,7 +384,7 @@ void RenderGameplay() {
 			deviceContext->IASetVertexBuffers(0, 1, &obstacleBuffer, &s, &o);
 			deviceContext->Draw(6, 0);
 		}
-	}xx
+	}
 
 	// Bola — textura ou cor solida
 	if (editorBallTexture) {
@@ -526,7 +527,7 @@ void RenderGameplay() {
 
 void CleanD3D() {
 	if (swapChain) swapChain->Release(); if (renderTargetView) renderTargetView->Release(); if (deviceContext) deviceContext->Release(); if (device) device->Release();
-	if (vertexBuffer) vertexBuffer->Release(); if (vertexShader) vertexShader->Release(); if (pixelShader) pixelShader->Release(); if (inputLayout) inputLayout->Release();
+	if (vertexBuffer) vertexBuffer->Release(); if (paddleVertexBuffer) paddleVertexBuffer->Release(); if (vertexShader) vertexShader->Release(); if (pixelShader) pixelShader->Release(); if (inputLayout) inputLayout->Release();
 	if (rasterState) rasterState->Release(); if (pixelShaderBlock) pixelShaderBlock->Release(); if (blockColorBuffer) blockColorBuffer->Release();
 	if (blockVertexBuffer) blockVertexBuffer->Release(); if (ballVertexBuffer) ballVertexBuffer->Release(); if (projectileBuffer) projectileBuffer->Release();
 	if (forceFieldBuffer) forceFieldBuffer->Release(); if (dashShieldBuffer) dashShieldBuffer->Release(); if (obstacleBuffer) obstacleBuffer->Release(); if (enemyBulletBuffer) enemyBulletBuffer->Release();

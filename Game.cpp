@@ -240,12 +240,16 @@ void UpdateBall()
                         activeTargets.push_back(&target);
                     }
                 }
+
                 ballInTransit = true;
                 portalTimer = 60;
+                ballVelX = 0.0f;
+                ballVelY = 0.0f;
                 float halfTimer = portalTimer / 2;
-                ballX = (pLeft + pRight)/   2;
-                ballY = (pTop + pBottom)/ 2;
+                ballX = (pLeft + pRight) / 2;
+                ballY = (pTop + pBottom) / 2;
                 break;
+
             }
         }
     }

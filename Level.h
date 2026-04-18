@@ -1,0 +1,18 @@
+#pragma once
+#include "Globals.h"
+
+void ClearLevel();
+void SaveLevel(const char* filename);
+void LoadLevel(const char* filename);
+void AddBlocks(float x, float y, float width, float height, int hits, int pattern, int count);
+void AddBlockFromConfig(float x, float y, const BlockConfig& cfg, ID3D11ShaderResourceView* srv = nullptr);
+void AddObstacles(float x, float y, float width, float height);
+void InitStage(int stageSelected);
+bool SaveStageJSON(const char* fullPath);
+bool LoadStageJSON(const char* fullPath);
+bool ExportStageTxt(const char* txtPath);
+bool SaveGameProject(const char* fullPath);
+bool LoadGameProject(const char* fullPath);
+void ApplyProjectConfigs();
+void PopulateGameplayFromStageObjects();
+void AddPortal(float x, float y, float width, float height);

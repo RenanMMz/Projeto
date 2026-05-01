@@ -316,6 +316,73 @@ void RenderDiffSelect() {
 	}
 }
 
+// Forward declaration — defined later in this file alongside the preview helpers
+static void DrawQuadColor(float cx, float cy, float hw, float hh,
+	float r, float g, float b, float a);
+
+// ==========================================
+// RENDER BOSS
+// ==========================================
+
+void RenderBoss()
+{
+	if (!g_boss.active) return;
+	const BossConfig& cfg = g_boss.config;
+	const float hw = cfg.width  * 0.5f;
+	const float hh = cfg.height;
+
+	if (cfg.archetype == BOSS_ARCH_MULTIPART) {
+		// Each active node at its own world position
+		for (int ni = 0; ni < cfg.nodeCount && ni < BOSS_MAX_NODES; ni++) {
+			if (!g_boss.nodeActive[ni]) continue;
+			const float nx = g_boss.nodeX[ni], ny = g_boss.nodeY[ni];
+			if (g_boss.nodeSRVs[ni])
+				DrawTexturedQuad(g_boss.nodeSRVs[ni], nx - hw, ny, nx + hw, ny + hh);
+			else
+				DrawQuadColor(nx, ny + hh * 0.5f, hw, hh * 0.5f, 0.75f, 0.2f, 0.75f, 1.0f);
+		}
+	}
+	else {
+		// Main boss sprite
+		if (g_boss.textureSRV) {
+			DrawTexturedQuad(g_boss.textureSRV,
+				g_boss.x - hw, g_boss.y, g_boss.x + hw, g_boss.y + hh);
+		} else {
+			const float r = g_boss.invincible ? 0.45f : 0.9f;
+			DrawQuadColor(g_boss.x, g_boss.y + hh * 0.5f, hw, hh * 0.5f, r, 0.2f, 0.2f, 1.0f);
+		}
+		// Familiars (STATIC_FAMILIARS)
+		if (cfg.archetype == BOSS_ARCH_STATIC_FAMILIARS) {
+			for (int i = 0; i < cfg.familiarCount && i < BOSS_MAX_FAMILIARS; i++) {
+				const FamiliarConfig& fam = cfg.familiars[i];
+				const float fx = g_boss.x + fam.relOffsetX +
+					cosf(g_boss.familiarAngles[i]) * fam.orbitRadius;
+				const float fy = g_boss.y + fam.relOffsetY +
+					sinf(g_boss.familiarAngles[i]) * fam.orbitRadius;
+				const float fhw = 0.04f;
+				if (g_boss.familiarSRVs[i])
+					DrawTexturedQuad(g_boss.familiarSRVs[i],
+						fx - fhw, fy - fhw, fx + fhw, fy + fhw);
+				else
+					DrawQuadColor(fx, fy, fhw, fhw, 0.4f, 0.8f, 0.4f, 1.0f);
+			}
+		}
+	}
+
+	// HP bar drawn above the boss
+	if (cfg.maxHP > 0) {
+		float hpPct = (cfg.maxHP > 0) ? (float)g_boss.hp / (float)cfg.maxHP : 0.0f;
+		if (hpPct < 0.0f) hpPct = 0.0f;
+		const float barY  = g_boss.y + hh + 0.04f;
+		const float barHW = hw;
+		const float barHH = 0.015f;
+		DrawQuadColor(g_boss.x, barY, barHW, barHH, 0.25f, 0.25f, 0.25f, 1.0f);
+		if (hpPct > 0.0f)
+			DrawQuadColor(g_boss.x - barHW + barHW * hpPct, barY,
+				barHW * hpPct, barHH, 0.85f, 0.15f, 0.15f, 1.0f);
+	}
+}
+
 void RenderGameplay() {
 	// Cor de fundo do stage (usa config do editor se disponivel)
 	float clearColor[4] = {
@@ -464,6 +531,7 @@ void RenderGameplay() {
 	}
 
 	// Balas inimigas
+	if (currentStageMode == STAGE_BOSS) RenderBoss();
 	deviceContext->PSSetShader(pixelShaderEnemyBullet, nullptr, 0);
 	for (auto& bullet : enemyBullets) {
 		if (!bullet.active) continue; Vertex verticesBullet[] = { {bullet.x - bullet.size, bullet.y + bullet.size, 0.0f}, {bullet.x - bullet.size, bullet.y - bullet.size, 0.0f}, {bullet.x + bullet.size, bullet.y - bullet.size, 0.0f}, {bullet.x - bullet.size, bullet.y + bullet.size, 0.0f}, {bullet.x + bullet.size, bullet.y - bullet.size, 0.0f}, {bullet.x + bullet.size, bullet.y + bullet.size, 0.0f} };

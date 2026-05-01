@@ -7,7 +7,6 @@ Debug/
 Release/
 x64/
 x86/
-TG/Debug/
 TG/x64/
 
 # Compiled object files
@@ -20,7 +19,6 @@ TG/x64/
 *.exp
 
 # Executables and binaries
-*.exe
 *.dll
 
 # Debug symbols and databases

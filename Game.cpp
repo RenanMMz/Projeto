@@ -634,6 +634,217 @@ void HandlePortals()
 }
 
 // ==========================================
+// BOSS
+// ==========================================
+
+void UpdateBoss()
+{
+    if (!g_boss.active) return;
+    const BossConfig& cfg = g_boss.config;
+    const float hw = cfg.width  * 0.5f;
+    const float hh = cfg.height;
+
+    // Ball vs Boss collision — main body (SCRIPTED / STATIC / STATIC_FAMILIARS)
+    if (cfg.archetype != BOSS_ARCH_MULTIPART) {
+        bool bHitX = ballX + ballSize > g_boss.x - hw && ballX - ballSize < g_boss.x + hw;
+        bool bHitY = ballY + ballSize > g_boss.y      && ballY - ballSize < g_boss.y + hh;
+        if (bHitX && bHitY) {
+            ballVelY *= -1.0f;
+            if (!g_boss.invincible) {
+                g_boss.hp--; bossHP = g_boss.hp;
+                if (g_boss.hp <= 0) { g_boss.active = false; return; }
+            }
+        }
+    }
+
+    // Ball vs multipart nodes
+    if (cfg.archetype == BOSS_ARCH_MULTIPART) {
+        for (int ni = 0; ni < cfg.nodeCount && ni < BOSS_MAX_NODES; ni++) {
+            if (!g_boss.nodeActive[ni]) continue;
+            bool nhitX = ballX + ballSize > g_boss.nodeX[ni] - hw &&
+                         ballX - ballSize < g_boss.nodeX[ni] + hw;
+            bool nhitY = ballY + ballSize > g_boss.nodeY[ni] &&
+                         ballY - ballSize < g_boss.nodeY[ni] + hh;
+            if (nhitX && nhitY) {
+                ballVelY *= -1.0f;
+                if (!g_boss.invincible) {
+                    g_boss.hp--; bossHP = g_boss.hp;
+                    if (g_boss.hp <= 0) { g_boss.active = false; return; }
+                }
+            }
+        }
+    }
+
+    // Phase transition — advance-only (highest-indexed phase whose threshold >= current HP%)
+    if (cfg.hpPhaseCount > 0 && cfg.maxHP > 0) {
+        float hpPct = (float)g_boss.hp / (float)cfg.maxHP;
+        for (int i = cfg.hpPhaseCount - 1; i > g_boss.currentPhase; i--) {
+            if (hpPct <= cfg.hpPhases[i].hpThresholdPct) {
+                g_boss.currentPhase = i;
+                g_boss.actionIdx    = 0;
+                g_boss.actionTimer  = 0.0f;
+                break;
+            }
+        }
+    }
+
+    // Script execution — SCRIPTED / STATIC / STATIC_FAMILIARS all drive through hpPhases
+    if (cfg.archetype != BOSS_ARCH_MULTIPART && cfg.hpPhaseCount > 0) {
+        const BossScript& sc = cfg.hpPhases[g_boss.currentPhase].script;
+        if (sc.actionCount > 0) {
+            const int idx = g_boss.actionIdx % sc.actionCount;
+            const BossAction& act = sc.actions[idx];
+            g_boss.actionTimer++;
+            bool done = false;
+            switch (act.type) {
+            case BOSS_ACT_MOVE_TO: {
+                float dx = act.targetX - g_boss.x, dy = act.targetY - g_boss.y;
+                float len = sqrtf(dx * dx + dy * dy);
+                if (len < 0.005f) { done = true; break; }
+                float sp = (act.speed > 0.0f) ? act.speed : 0.01f;
+                g_boss.x += (dx / len) * sp;
+                g_boss.y += (dy / len) * sp;
+                break;
+            }
+            case BOSS_ACT_TELEPORT:
+                g_boss.x = act.targetX; g_boss.y = act.targetY; done = true; break;
+            case BOSS_ACT_WAIT:
+                done = g_boss.actionTimer >= act.duration * 60.0f; break;
+            case BOSS_ACT_SHOOT_TIMED: {
+                if (g_boss.actionTimer == 1.0f) {
+                    float pAngle = atan2f(paddleY - g_boss.y, paddleX - g_boss.x);
+                    float spd = (act.bulletSpeed > 0.0f) ? act.bulletSpeed : 0.007f;
+                    for (int i = 0; i < act.bulletCount; i++) {
+                        float a = pAngle;
+                        if (act.bulletPattern == 0) {
+                            float spr = 1.0f;
+                            a = pAngle - spr * 0.5f + (act.bulletCount > 1
+                                ? spr * i / (act.bulletCount - 1) : 0.0f);
+                        } else if (act.bulletPattern == 2) {
+                            a = (2.0f * 3.14159265f * i) / act.bulletCount;
+                        }
+                        SpawnEnemyBulletAngle(g_boss.x, g_boss.y, a, spd);
+                    }
+                }
+                done = g_boss.actionTimer >= act.duration * 60.0f; break;
+            }
+            case BOSS_ACT_SHOOT_FIXED_PTS: {
+                if (g_boss.actionTimer == 1.0f) {
+                    float spd = (act.bulletSpeed > 0.0f) ? act.bulletSpeed : 0.007f;
+                    for (int fp = 0; fp < act.fixedPointCount; fp++) {
+                        float a = atan2f(act.fixedPtsY[fp] - g_boss.y,
+                                        act.fixedPtsX[fp] - g_boss.x);
+                        SpawnEnemyBulletAngle(g_boss.x, g_boss.y, a, spd);
+                    }
+                }
+                done = g_boss.actionTimer >= act.duration * 60.0f; break;
+            }
+            case BOSS_ACT_CHARGE_PLAYER: {
+                float dx = paddleX - g_boss.x, dy = paddleY - g_boss.y;
+                float len = sqrtf(dx * dx + dy * dy);
+                if (len > 0.02f) {
+                    float sp = (act.speed > 0.0f) ? act.speed : 0.02f;
+                    g_boss.x += (dx / len) * sp;
+                    g_boss.y += (dy / len) * sp;
+                }
+                done = g_boss.actionTimer >= act.duration * 60.0f; break;
+            }
+            case BOSS_ACT_INVINCIBLE:
+                g_boss.invincible = act.invincibleOn;
+                done = g_boss.actionTimer >= act.duration * 60.0f; break;
+            default:
+                done = true; break; // SPAWN_MINION, CHANGE_SPRITE — not yet implemented, skip
+            }
+
+            if (done) {
+                if (act.type == BOSS_ACT_INVINCIBLE && act.invincibleOn)
+                    g_boss.invincible = false;
+                g_boss.actionIdx++;
+                const int loopTo = (sc.loopFromStep >= 0 && sc.loopFromStep < sc.actionCount)
+                    ? sc.loopFromStep : 0;
+                if (g_boss.actionIdx >= sc.actionCount)
+                    g_boss.actionIdx = loopTo;
+                g_boss.actionTimer = 0.0f;
+            }
+        }
+    }
+
+    // Multipart: each node drives its own BossScript
+    if (cfg.archetype == BOSS_ARCH_MULTIPART) {
+        bool anyAlive = false;
+        for (int ni = 0; ni < cfg.nodeCount && ni < BOSS_MAX_NODES; ni++) {
+            if (!g_boss.nodeActive[ni]) continue;
+            anyAlive = true;
+            const BossScript& sc = cfg.nodes[ni].script;
+            if (sc.actionCount == 0) continue;
+            const int idx = g_boss.nodeActionIdx[ni] % sc.actionCount;
+            const BossAction& act = sc.actions[idx];
+            g_boss.nodeActionTimer[ni]++;
+            float& nx = g_boss.nodeX[ni];
+            float& ny = g_boss.nodeY[ni];
+            const float nt = g_boss.nodeActionTimer[ni];
+            bool ndone = false;
+            switch (act.type) {
+            case BOSS_ACT_MOVE_TO: {
+                float dx = act.targetX - nx, dy = act.targetY - ny;
+                float len = sqrtf(dx * dx + dy * dy);
+                if (len < 0.005f) { ndone = true; break; }
+                float sp = (act.speed > 0.0f) ? act.speed : 0.01f;
+                nx += (dx / len) * sp; ny += (dy / len) * sp; break;
+            }
+            case BOSS_ACT_TELEPORT: nx = act.targetX; ny = act.targetY; ndone = true; break;
+            case BOSS_ACT_WAIT:     ndone = nt >= act.duration * 60.0f; break;
+            case BOSS_ACT_SHOOT_TIMED:
+                if (nt == 1.0f) {
+                    float pAngle = atan2f(paddleY - ny, paddleX - nx);
+                    float spd = (act.bulletSpeed > 0.0f) ? act.bulletSpeed : 0.007f;
+                    for (int i = 0; i < act.bulletCount; i++) {
+                        float a = (act.bulletPattern == 2)
+                            ? (2.0f * 3.14159265f * i / act.bulletCount) : pAngle;
+                        SpawnEnemyBulletAngle(nx, ny, a, spd);
+                    }
+                }
+                ndone = nt >= act.duration * 60.0f; break;
+            default: ndone = true; break;
+            }
+            if (ndone) {
+                g_boss.nodeActionIdx[ni]++;
+                const int loopTo = (sc.loopFromStep >= 0 && sc.loopFromStep < sc.actionCount)
+                    ? sc.loopFromStep : 0;
+                if (g_boss.nodeActionIdx[ni] >= sc.actionCount)
+                    g_boss.nodeActionIdx[ni] = loopTo;
+                g_boss.nodeActionTimer[ni] = 0.0f;
+            }
+        }
+        if (!anyAlive) { g_boss.active = false; return; }
+    }
+
+    // Familiars orbit and shoot (STATIC_FAMILIARS)
+    if (cfg.archetype == BOSS_ARCH_STATIC_FAMILIARS) {
+        for (int i = 0; i < cfg.familiarCount && i < BOSS_MAX_FAMILIARS; i++) {
+            const FamiliarConfig& fam = cfg.familiars[i];
+            g_boss.familiarAngles[i] += fam.orbitSpeed;
+            const float fx = g_boss.x + fam.relOffsetX +
+                             cosf(g_boss.familiarAngles[i]) * fam.orbitRadius;
+            const float fy = g_boss.y + fam.relOffsetY +
+                             sinf(g_boss.familiarAngles[i]) * fam.orbitRadius;
+            const float interval = (fam.shootIntervalSec > 0.0f)
+                ? fam.shootIntervalSec * 60.0f : 120.0f;
+            g_boss.familiarShootTimers[i]++;
+            if (g_boss.familiarShootTimers[i] >= interval) {
+                g_boss.familiarShootTimers[i] = 0.0f;
+                float pAngle = atan2f(paddleY - fy, paddleX - fx);
+                float spd    = (fam.bulletSpeed > 0.0f) ? fam.bulletSpeed : 0.007f;
+                for (int bi = 0; bi < fam.bulletCount; bi++) {
+                    float a = pAngle + (bi - fam.bulletCount / 2) * 0.3f;
+                    SpawnEnemyBulletAngle(fx, fy, a, spd);
+                }
+            }
+        }
+    }
+}
+
+// ==========================================
 // GAME LOOP PRINCIPAL
 // ==========================================
 
@@ -646,8 +857,11 @@ void UpdateGameplay()
         selectedMenuIndex = 0; currentState = GameState::STATE_START_MENU; return;
     }
 
-    // Condição de vitória: só verifica se o stage tinha blocos para começar
-    if (blocksRemaining <= 0 && blocksInitialCount > 0 && !modoEditor) {
+    // Condição de vitória: blocos normais destruídos OU boss derrotado (IE-02)
+    bool stageCleared = (currentStageMode == STAGE_BOSS)
+        ? !g_boss.active
+        : (blocksRemaining <= 0 && blocksInitialCount > 0);
+    if (stageCleared && !modoEditor) {
         int nextStage = stage + 1;
         // Verifica se existe proximo stage no projeto
         bool hasNext = false;
@@ -720,4 +934,5 @@ void UpdateGameplay()
     UpdateIFrame();
     UpdateEnemyBullet();
     UpdateDroppedItems();
+    if (currentStageMode == STAGE_BOSS) UpdateBoss();
 }

@@ -13,4 +13,5 @@ void RenderDiffSelect();
 void RenderGameplay();
 void RenderDebugUI();
 void RenderEditor();
+void RenderBoss();
 void DrawObstaclePreview(float centerX, float centerY);

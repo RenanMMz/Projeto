@@ -257,6 +257,34 @@ struct BossConfig {
 };
 
 // ==========================================
+// BOSS RUNTIME STATE
+// ==========================================
+
+struct BossState {
+	bool   active;
+	float  x, y;
+	int    hp;
+	int    currentPhase;   // index into config.hpPhases
+	int    actionIdx;      // current step in the active script
+	float  actionTimer;   // frames elapsed in the current action
+	bool   invincible;
+	BossConfig config;     // full copy loaded at stage start
+	// Runtime SRVs (not owned; lives in the texture cache)
+	ID3D11ShaderResourceView* textureSRV;
+	ID3D11ShaderResourceView* familiarSRVs[BOSS_MAX_FAMILIARS];
+	ID3D11ShaderResourceView* nodeSRVs[BOSS_MAX_NODES];
+	// Familiar orbit
+	float  familiarAngles[BOSS_MAX_FAMILIARS];
+	float  familiarShootTimers[BOSS_MAX_FAMILIARS];
+	// Multipart node positions and script state
+	float  nodeX[BOSS_MAX_NODES];
+	float  nodeY[BOSS_MAX_NODES];
+	bool   nodeActive[BOSS_MAX_NODES];
+	int    nodeActionIdx[BOSS_MAX_NODES];
+	float  nodeActionTimer[BOSS_MAX_NODES];
+};
+
+// ==========================================
 // SPRITES DO JOGADOR
 // ==========================================
 
@@ -427,7 +455,9 @@ extern int   stageTransitionTimer;
 extern int   life;
 extern int   cfgLife;
 extern int   timer;
-extern int   bossHP;
+extern int       bossHP;
+extern BossState g_boss;
+extern StageMode currentStageMode;
 extern int   blocksRemaining;
 extern int   blocksInitialCount;  // total de blocos ao iniciar o stage
 extern int   timeCount;

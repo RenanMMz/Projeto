@@ -23,6 +23,7 @@ static ID3D11ShaderResourceView* CacheLoadTexture(const char* path) {
 }
 bool LoadBombConfig(const char* fullPath);
 bool LoadMenuConfig(const char* fullPath);
+bool LoadBossConfig(const char* fullPath);
 
 void ClearLevel()
 {
@@ -381,6 +382,8 @@ static bool LoadObstacleDimsFromFile(const char* path, float& w, float& h,
 void PopulateGameplayFromStageObjects()
 {
 	ClearLevel();
+	currentStageMode = editorStageEditorConfig.mode;
+	g_boss = {};
 	for (auto& o : stageObjects) {
 		if (o.type == PLACED_BLOCK) {
 			BlockConfig cfg = editorBlockConfig; // usar defaults do editor como base
@@ -408,7 +411,40 @@ void PopulateGameplayFromStageObjects()
 			obs.colorR = cr; obs.colorG = cg; obs.colorB = cb; obs.colorA = ca;
 			obstacles.push_back(obs);
 		}
-		// PLACED_BOSS e PLACED_BALLSPAWN sao tratados separadamente
+		// PLACED_BOSS e PLACED_BALLSPAWN tratados aqui
+		else if (o.type == PLACED_BOSS) {
+			if (o.configFile[0] != '\0')
+				LoadBossConfig(o.configFile);
+			g_boss                = {};
+			g_boss.active         = true;
+			g_boss.config         = editorBossConfig;
+			g_boss.hp             = editorBossConfig.maxHP;
+			g_boss.x              = (o.x != 0.0f) ? o.x : editorBossConfig.startX;
+			g_boss.y              = (o.y != 0.0f) ? o.y : editorBossConfig.startY;
+			if (editorBossConfig.texturePath[0])
+				g_boss.textureSRV = CacheLoadTexture(editorBossConfig.texturePath);
+			const int nFam = editorBossConfig.familiarCount < BOSS_MAX_FAMILIARS
+				? editorBossConfig.familiarCount : BOSS_MAX_FAMILIARS;
+			for (int i = 0; i < nFam; i++) {
+				g_boss.familiarAngles[i] = (2.0f * 3.14159265f * i) / (nFam > 0 ? nFam : 1);
+				if (editorBossConfig.familiars[i].texturePath[0])
+					g_boss.familiarSRVs[i] = CacheLoadTexture(editorBossConfig.familiars[i].texturePath);
+			}
+			const int nNodes = editorBossConfig.nodeCount < BOSS_MAX_NODES
+				? editorBossConfig.nodeCount : BOSS_MAX_NODES;
+			for (int i = 0; i < nNodes; i++) {
+				g_boss.nodeX[i]      = editorBossConfig.nodes[i].startX;
+				g_boss.nodeY[i]      = editorBossConfig.nodes[i].startY;
+				g_boss.nodeActive[i] = true;
+				if (editorBossConfig.nodes[i].texturePath[0])
+					g_boss.nodeSRVs[i] = CacheLoadTexture(editorBossConfig.nodes[i].texturePath);
+			}
+			bossHP = editorBossConfig.maxHP;
+		}
+		else if (o.type == PLACED_BALLSPAWN) {
+			editorStageConfig.ballStartX = o.x;
+			editorStageConfig.ballStartY = o.y;
+		}
 	}
 }
 

@@ -36,7 +36,7 @@ bool InitD3D(HWND hWnd) {
 	if (FAILED(D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &scd, &swapChain, &device, nullptr, &deviceContext))) return false;
 	ID3D11Texture2D* backBuffer = nullptr; swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBuffer); device->CreateRenderTargetView(backBuffer, nullptr, &renderTargetView); backBuffer->Release();
 	deviceContext->OMSetRenderTargets(1, &renderTargetView, nullptr);
-	D3D11_VIEWPORT viewport = {}; viewport.TopLeftX = 0; viewport.TopLeftY = 0; viewport.Width = 800; viewport.Height = 600; viewport.MinDepth = 0.0f; viewport.MaxDepth = 1.0f; deviceContext->RSSetViewports(1, &viewport);
+	D3D11_VIEWPORT viewport = {}; viewport.TopLeftX = 0; viewport.TopLeftY = 0; viewport.Width = (FLOAT)g_currentWidth; viewport.Height = (FLOAT)g_currentHeight; viewport.MinDepth = 0.0f; viewport.MaxDepth = 1.0f; deviceContext->RSSetViewports(1, &viewport);
 	D3D11_RASTERIZER_DESC rd = {}; rd.FillMode = D3D11_FILL_SOLID; rd.CullMode = D3D11_CULL_NONE; rd.FrontCounterClockwise = false;
 	HRESULT hr = device->CreateRasterizerState(&rd, &rasterState); if (FAILED(hr)) return false; deviceContext->RSSetState(rasterState);
 
@@ -181,6 +181,51 @@ void DrawScore(HWND hwnd, int score) {
 void DrawBlocksRemaining(HWND hwnd, int blocksRemaining) {
 	HDC hdc = GetDC(hwnd); SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, RGB(255, 255, 255));
 	wchar_t buffer[32]; swprintf(buffer, 32, L"Blocks Remaining: %d", blocksRemaining); TextOutW(hdc, 200, 10, buffer, (int)wcslen(buffer)); ReleaseDC(hwnd, hdc);
+}
+
+// Desenha os labels do menu principal sobre os botoes via GDI (TextOutW).
+// Os escapes \xNNNN evitam dependencia do encoding do arquivo-fonte (cedilha/til).
+void DrawMenuText(HWND hwnd) {
+	static const wchar_t* s_labelsW[] = {
+		L"Jogar",
+		L"Configura" L"\x00E7" L"\x00F5" L"es",
+		L"Sair"
+	};
+	const int labelCount = (int)(sizeof(s_labelsW) / sizeof(s_labelsW[0]));
+
+	HDC hdc = GetDC(hwnd);
+	SetBkMode(hdc, TRANSPARENT);
+
+	int fontH = (g_currentHeight > 0) ? max(16, g_currentHeight / 22) : 28;
+	HFONT hFont = CreateFontW(fontH, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+		DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+		ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+	HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
+
+	const float startY = 0.2f, spacing = 0.3f;
+	const float w = (float)((g_currentWidth  > 0) ? g_currentWidth  : 800);
+	const float h = (float)((g_currentHeight > 0) ? g_currentHeight : 600);
+
+	for (int i = 0; i < labelCount && i < mainMenuCount; i++) {
+		bool sel = (selectedMenuIndex == i);
+		SetTextColor(hdc, sel ? RGB(255, 230, 90) : RGB(240, 240, 240));
+
+		float ndcY = startY - i * spacing;
+		int pxYCenter = (int)((1.0f - ndcY) * 0.5f * h);
+
+		const wchar_t* label = s_labelsW[i];
+		int len = (int)wcslen(label);
+		SIZE sz = {};
+		GetTextExtentPoint32W(hdc, label, len, &sz);
+		int pxX = (int)(w * 0.5f) - sz.cx / 2;
+		int pxY = pxYCenter - sz.cy / 2;
+
+		TextOutW(hdc, pxX, pxY, label, len);
+	}
+
+	SelectObject(hdc, hOldFont);
+	DeleteObject(hFont);
+	ReleaseDC(hwnd, hdc);
 }
 
 // Desenha quad texturizado arbitrÃ¡rio em NDC
@@ -334,11 +379,25 @@ void RenderGameplay() {
 
 	// Paddle — textura direcional ou idle ou cor solida
 	if (paddleVisible) {
-		ID3D11ShaderResourceView* paddleSRV = editorPlayerTexture; // idle
-		if (paddleMoveDir < 0 && editorPlayerRunLeftTexture)
-			paddleSRV = editorPlayerRunLeftTexture;
-		else if (paddleMoveDir > 0 && editorPlayerRunRightTexture)
-			paddleSRV = editorPlayerRunRightTexture;
+		ID3D11ShaderResourceView* paddleSRV = editorPlayerTexture; // idle (fallback base)
+
+		if (dashActive) {
+			// Dash tem precedência; usa dashDir (nunca paddleMoveDir, que é zerado durante o dash)
+			if (dashDir < 0.0f)
+				paddleSRV = editorPlayerDashLeftTexture  ? editorPlayerDashLeftTexture
+				                                        : editorPlayerRunLeftTexture;
+			else
+				paddleSRV = editorPlayerDashRightTexture ? editorPlayerDashRightTexture
+				                                        : editorPlayerRunRightTexture;
+			// Se nem a sprite de run estiver disponível, cai para idle (paddleSRV já aponta para ele)
+			if (!paddleSRV) paddleSRV = editorPlayerTexture;
+		}
+		else {
+			if (paddleMoveDir < 0 && editorPlayerRunLeftTexture)
+				paddleSRV = editorPlayerRunLeftTexture;
+			else if (paddleMoveDir > 0 && editorPlayerRunRightTexture)
+				paddleSRV = editorPlayerRunRightTexture;
+		}
 
 		if (paddleSRV) {
 			DrawTexturedQuad(paddleSRV,
@@ -482,7 +541,7 @@ void RenderGameplay() {
 		switch (d.type) {
 		case 0: dr = 1.0f; dg = 0.3f; db = 0.3f; break; // vida = vermelho
 		case 1: dr = 0.3f; dg = 0.5f; db = 1.0f; break; // shield = azul
-		case 2: dr = 1.0f; dg = 0.7f; db = 0.1f; break; // bomba = laranja
+		case 2: dr = 1.0f; dg = 0.7f; db = 0.1f; break; // (reservado) = laranja
 		case 3: dr = 1.0f; dg = 1.0f; db = 0.2f; break; // pontos = amarelo
 		}
 		Vertex dv[] = { {d.x-dsz,d.y+dsz,0},{d.x-dsz,d.y-dsz,0},{d.x+dsz,d.y-dsz,0},{d.x-dsz,d.y+dsz,0},{d.x+dsz,d.y-dsz,0},{d.x+dsz,d.y+dsz,0} };
@@ -523,6 +582,33 @@ void RenderGameplay() {
 		UINT s = sizeof(Vertex), o = 0;
 		deviceContext->IASetVertexBuffers(0, 1, &dashShieldBuffer, &s, &o); deviceContext->Draw(6, 0);
 	}
+}
+
+void ResizeViewport(int width, int height)
+{
+	if (!device || !swapChain || !deviceContext || width <= 0 || height <= 0) return;
+
+	deviceContext->OMSetRenderTargets(0, nullptr, nullptr);
+	if (renderTargetView) { renderTargetView->Release(); renderTargetView = nullptr; }
+
+	HRESULT hr = swapChain->ResizeBuffers(0, (UINT)width, (UINT)height, DXGI_FORMAT_UNKNOWN, 0);
+	if (FAILED(hr)) return;
+
+	ID3D11Texture2D* backBuffer = nullptr;
+	if (FAILED(swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBuffer)) || !backBuffer) return;
+	device->CreateRenderTargetView(backBuffer, nullptr, &renderTargetView);
+	backBuffer->Release();
+
+	deviceContext->OMSetRenderTargets(1, &renderTargetView, nullptr);
+
+	D3D11_VIEWPORT viewport = {};
+	viewport.TopLeftX = 0.0f;
+	viewport.TopLeftY = 0.0f;
+	viewport.Width    = (FLOAT)width;
+	viewport.Height   = (FLOAT)height;
+	viewport.MinDepth = 0.0f;
+	viewport.MaxDepth = 1.0f;
+	deviceContext->RSSetViewports(1, &viewport);
 }
 
 void CleanD3D() {
@@ -915,13 +1001,6 @@ static void RenderPreview_Boss()
 		DrawQuadColor(PREV_L + 0.05f + barFill / 2.0f, barY, barFill / 2.0f, 0.022f, 0.8f, 0.15f, 0.15f, 1.0f);
 }
 
-static void RenderPreview_Bomb()
-{
-	float r = (editorBombConfig.radius > 0) ? editorBombConfig.radius : 0.3f;
-	DrawQuadColor(PREVIEW_CX, PREVIEW_CY, r, r, 0.9f, 0.4f, 0.1f, 0.2f);  // area
-	DrawQuadColor(PREVIEW_CX, PREVIEW_CY, 0.04f, 0.04f, 1.0f, 0.6f, 0.1f, 1.0f); // icone
-}
-
 // ---------------------------------------------------------------------------
 // RenderEditor — clears + dispatcher de preview
 // ---------------------------------------------------------------------------
@@ -941,7 +1020,6 @@ void RenderEditor()
 	case EDITOR_MODE_OBSTACLE: RenderPreview_Obstacle(); break;
 	case EDITOR_MODE_ENEMY:    RenderPreview_Enemy();    break;
 	case EDITOR_MODE_BOSS:     RenderPreview_Boss();     break;
-	case EDITOR_MODE_BOMB:     RenderPreview_Bomb();     break;
 	case EDITOR_MODE_MENU:     RenderMenu();             break;
 	}
 }
@@ -971,6 +1049,89 @@ void RenderDebugUI()
 	ImGui::Text("Vidas  : %d", life);
 	ImGui::Text("Stage  : %d", stage);
 	ImGui::Text("Blocos : %d", blocksRemaining);
+
+	ImGui::End();
+	ImGui::Render();
+	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+}
+
+// ==========================================
+// OPTIONS — clear de fundo (D3D)
+// ==========================================
+void RenderOptions()
+{
+	float clearColor[4] = {
+		editorMenuConfig.bgColorR, editorMenuConfig.bgColorG,
+		editorMenuConfig.bgColorB, editorMenuConfig.bgColorA
+	};
+	deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
+	DrawMenuBackground(menuBgTexture);
+}
+
+// ==========================================
+// OPTIONS — UI ImGui (selecao de resolucao)
+// Aplica via SetWindowPos + AdjustWindowRect; o WM_SIZE resultante
+// dispara ResizeViewport automaticamente.
+// ==========================================
+void RenderOptionsUI()
+{
+	ImGui_ImplDX11_NewFrame();
+	ImGui_ImplWin32_NewFrame();
+	ImGui::NewFrame();
+
+	struct Res { int w, h; const char* label; };
+	static const Res kResolutions[] = {
+		{ 800,  600,  "800 x 600"   },
+		{ 1280, 720,  "1280 x 720"  },
+		{ 1920, 1080, "1920 x 1080" },
+	};
+	static int s_selectedIdx = 0;
+
+	// Sincroniza o indice com a resolucao atual quando a tela abre
+	for (int i = 0; i < (int)(sizeof(kResolutions) / sizeof(kResolutions[0])); i++) {
+		if (kResolutions[i].w == g_currentWidth && kResolutions[i].h == g_currentHeight) {
+			s_selectedIdx = i;
+			break;
+		}
+	}
+
+	ImGuiIO& io = ImGui::GetIO();
+	ImVec2 winSize(380.0f, 220.0f);
+	ImGui::SetNextWindowPos(ImVec2((io.DisplaySize.x - winSize.x) * 0.5f,
+	                               (io.DisplaySize.y - winSize.y) * 0.5f));
+	ImGui::SetNextWindowSize(winSize);
+	ImGui::Begin("Configuracoes", nullptr,
+		ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+
+	ImGui::Text("Resolucao da janela:");
+	ImGui::Spacing();
+
+	const char* items[8]; int itemCount = (int)(sizeof(kResolutions) / sizeof(kResolutions[0]));
+	for (int i = 0; i < itemCount; i++) items[i] = kResolutions[i].label;
+	ImGui::Combo("##resolucao", &s_selectedIdx, items, itemCount);
+
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	if (ImGui::Button("Aplicar", ImVec2(120, 0))) {
+		const Res& chosen = kResolutions[s_selectedIdx];
+		// AdjustWindowRect converte area de cliente para tamanho externo (com bordas)
+		RECT rc = { 0, 0, chosen.w, chosen.h };
+		LONG style = GetWindowLong(g_hWnd, GWL_STYLE);
+		AdjustWindowRect(&rc, style, FALSE);
+		SetWindowPos(g_hWnd, nullptr, 0, 0,
+			rc.right - rc.left, rc.bottom - rc.top,
+			SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+		// O WM_SIZE resultante dispara ResizeViewport automaticamente.
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Voltar", ImVec2(120, 0))) {
+		selectedMenuIndex = 1;
+		currentState = GameState::STATE_START_MENU;
+	}
+
+	ImGui::TextDisabled("ESC tambem volta ao menu.");
 
 	ImGui::End();
 	ImGui::Render();

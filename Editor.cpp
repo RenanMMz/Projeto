@@ -212,7 +212,7 @@ static void DropTableEditor(DropTable& dt)
 	ImGui::Checkbox("Tem Drop?", &dt.hasDrop);
 	if (!dt.hasDrop) return;
 	ImGui::Indent();
-	const char* labels[] = { "Vida", "Shield", "Bomba", "Pontos x2" };
+	const char* labels[] = { "Vida", "Shield", "(Reservado)", "Pontos x2" };
 	float totalW = 0.0f; for (int i = 0; i < 4; i++) if (dt.entryEnabled[i]) totalW += dt.entryWeight[i];
 	for (int i = 0; i < 4; i++) {
 		char chkId[32]; sprintf_s(chkId, "##chk%d", i);
@@ -245,8 +245,10 @@ static float* s_bossPickY = nullptr;
 
 static void ScreenToNDC(POINT pt, float& ndcX, float& ndcY)
 {
-	ndcX = (pt.x / 400.0f) - 1.0f;
-	ndcY = -(pt.y / 300.0f) + 1.0f;
+	float halfW = (g_currentWidth  > 0) ? (g_currentWidth  * 0.5f) : 400.0f;
+	float halfH = (g_currentHeight > 0) ? (g_currentHeight * 0.5f) : 300.0f;
+	ndcX = (pt.x / halfW) - 1.0f;
+	ndcY = -(pt.y / halfH) + 1.0f;
 }
 
 void UpdateEditor()
@@ -416,9 +418,11 @@ bool LoadPlayerConfig(const char* fullPath)
 	f.close();
 	paddleWidth = paddleEditWidth;
 	paddleHeight = paddleHeightNormal;
-	LoadSRV(editorPlayerConfig.texturePath, &editorPlayerTexture);
-	LoadSRV(editorPlayerConfig.runRightTexturePath, &editorPlayerRunRightTexture);
-	LoadSRV(editorPlayerConfig.runLeftTexturePath, &editorPlayerRunLeftTexture);
+	LoadSRV(editorPlayerConfig.texturePath,           &editorPlayerTexture);
+	LoadSRV(editorPlayerConfig.runRightTexturePath,   &editorPlayerRunRightTexture);
+	LoadSRV(editorPlayerConfig.runLeftTexturePath,    &editorPlayerRunLeftTexture);
+	LoadSRV(editorPlayerConfig.dashRightTexturePath,  &editorPlayerDashRightTexture);
+	LoadSRV(editorPlayerConfig.dashLeftTexturePath,   &editorPlayerDashLeftTexture);
 	LoadSRV(editorPlayerConfig.projectileTexturePath, &editorProjectileTexture);
 	return true;
 }
@@ -817,46 +821,6 @@ bool LoadBossConfig(const char* fullPath)
 }
 
 // ==========================================
-// SAVE / LOAD � BOMB
-// ==========================================
-
-bool SaveBombConfig(const char* fullPath)
-{
-	std::ofstream f(fullPath); if (!f.is_open()) return false;
-	f << "{\n";
-	f << "  \"name\": \"" << editorBombConfig.name << "\",\n";
-	f << "  \"texturePath\": \"" << editorBombConfig.texturePath << "\",\n";
-	f << "  \"type\": " << editorBombConfig.type << ",\n";
-	f << "  \"radius\": " << editorBombConfig.radius << ",\n";
-	f << "  \"damage\": " << editorBombConfig.damage << ",\n";
-	f << "  \"durationFrames\": " << editorBombConfig.durationFrames << "\n";
-	f << "}\n"; f.close(); return true;
-}
-
-bool LoadBombConfig(const char* fullPath)
-{
-	std::ifstream f(fullPath); if (!f.is_open()) return false;
-	std::string line;
-	while (std::getline(f, line)) {
-		if (line.find("\"type\"") != std::string::npos) sscanf_s(line.c_str(), " \"type\": %d,", &editorBombConfig.type);
-		if (line.find("\"radius\"") != std::string::npos) sscanf_s(line.c_str(), " \"radius\": %f,", &editorBombConfig.radius);
-		if (line.find("\"damage\"") != std::string::npos) sscanf_s(line.c_str(), " \"damage\": %f,", &editorBombConfig.damage);
-		if (line.find("\"durationFrames\"") != std::string::npos) sscanf_s(line.c_str(), " \"durationFrames\": %d,", &editorBombConfig.durationFrames);
-		auto readStr = [&](const char* key, char* dest, int sz) {
-			if (line.find(key) != std::string::npos) {
-				size_t s = line.find(": \"") + 3, e = line.rfind("\"");
-				if (s < e) {
-					std::string v = line.substr(s, e - s); strcpy_s(dest, sz, v.c_str());
-				}
-			}
-			};
-		readStr("\"name\"", editorBombConfig.name, 64);
-		readStr("\"texturePath\"", editorBombConfig.texturePath, 256);
-	}
-	f.close(); return true;
-}
-
-// ==========================================
 // SAVE / LOAD � MENU
 // ==========================================
 
@@ -938,13 +902,15 @@ void RenderEditorPlayer()
 		if (TextureButton("Parado", editorPlayerConfig.texturePath, 256, "spr_idle"))
 			LoadSRV(editorPlayerConfig.texturePath, &editorPlayerTexture);
 		if (TextureButton("Correndo Direita", editorPlayerConfig.runRightTexturePath, 256, "spr_run_r"))
-			LoadSRV(editorPlayerConfig.runRightTexturePath, &editorPlayerTexture);
+			LoadSRV(editorPlayerConfig.runRightTexturePath, &editorPlayerRunRightTexture);
 		if (TextureButton("Correndo Esquerda", editorPlayerConfig.runLeftTexturePath, 256, "spr_run_l"))
-			LoadSRV(editorPlayerConfig.runLeftTexturePath, &editorPlayerTexture);
+			LoadSRV(editorPlayerConfig.runLeftTexturePath, &editorPlayerRunLeftTexture);
 		TextureButton("Proj�til", editorPlayerConfig.projectileTexturePath, 256, "spr_proj");
 		TextureButton("Escudo", editorPlayerConfig.shieldTexturePath, 256, "spr_shield");
-		TextureButton("Dash Direita", editorPlayerConfig.dashRightTexturePath, 256, "spr_dash_r");
-		TextureButton("Dash Esquerda", editorPlayerConfig.dashLeftTexturePath, 256, "spr_dash_l");
+		if (TextureButton("Dash Direita", editorPlayerConfig.dashRightTexturePath, 256, "spr_dash_r"))
+			LoadSRV(editorPlayerConfig.dashRightTexturePath, &editorPlayerDashRightTexture);
+		if (TextureButton("Dash Esquerda", editorPlayerConfig.dashLeftTexturePath, 256, "spr_dash_l"))
+			LoadSRV(editorPlayerConfig.dashLeftTexturePath, &editorPlayerDashLeftTexture);
 	}
 
 	if (ImGui::CollapsingHeader("Efeito ao Receber Dano")) {
@@ -1491,34 +1457,6 @@ void RenderEditorBoss()
 }
 
 // ==========================================
-// PAINEL � BOMBA
-// ==========================================
-
-void RenderEditorBomb()
-{
-	ImGui::Text("=== EDITOR DE BOMBA/ESPECIAL ===");
-	ImGui::Separator();
-
-	ImGui::InputText("Nome##bomb", editorBombConfig.name, sizeof(editorBombConfig.name));
-	TextureButton("Sprite", editorBombConfig.texturePath, 256, "spr_bomb");
-
-	const char* bombTypes[] = { "Habilidade (ativada por input)", "Explosivo (lancavel)", "Ambos" };
-	ImGui::Combo("Tipo##bomb", &editorBombConfig.type, bombTypes, IM_ARRAYSIZE(bombTypes));
-	ImGui::SliderFloat("Raio##bomb", &editorBombConfig.radius, 0.05f, 1.5f);
-	ImGui::SliderFloat("Dano##bomb", &editorBombConfig.damage, 0.1f, 100.0f);
-	ImGui::SliderInt("Duracao (frames)", &editorBombConfig.durationFrames, 10, 300);
-
-	ImGui::Separator();
-	{
-		char sp[MAX_PATH] = {}, lp[MAX_PATH] = {}; bool ds, dl;
-		if (JsonSaveLoadButtons("objects\\BOMB", sp, MAX_PATH, lp, MAX_PATH, &ds, &dl)) {
-			if (ds) SaveBombConfig(sp);
-			if (dl) LoadBombConfig(lp);
-		}
-	}
-}
-
-// ==========================================
 // PAINEL � MENU
 // ==========================================
 
@@ -1636,11 +1574,6 @@ void RenderEditorUI_NoNewFrame()
 				currentEditorMode = EDITOR_MODE_BOSS;     editorDemoActive = false;
 			} RenderEditorBoss();     ImGui::EndTabItem();
 		}
-		if (ImGui::BeginTabItem("Bomba")) {
-			if (currentEditorMode != EDITOR_MODE_BOMB) {
-				currentEditorMode = EDITOR_MODE_BOMB;     editorDemoActive = false;
-			} RenderEditorBomb();     ImGui::EndTabItem();
-		}
 		if (ImGui::BeginTabItem("Menu")) {
 			if (currentEditorMode != EDITOR_MODE_MENU) {
 				currentEditorMode = EDITOR_MODE_MENU;     editorDemoActive = false;
@@ -1697,7 +1630,6 @@ void RenderEditorProject()
 
 		ProjectFileButton("Jogador", gameProject.playerConfigPath, "objects\\PLAYER");
 		ProjectFileButton("Bola", gameProject.ballConfigPath, "objects\\BALL");
-		ProjectFileButton("Bomba", gameProject.bombConfigPath, "objects\\BOMB");
 		ProjectFileButton("Menu", gameProject.menuConfigPath, "objects\\MENU");
 
 		ImGui::Separator();
@@ -1743,7 +1675,6 @@ void RenderEditorProject()
 	if (ImGui::Button("Aplicar ao Jogo (recarregar configs)", ImVec2(-1, 0))) {
 		if (gameProject.playerConfigPath[0]) LoadPlayerConfig(gameProject.playerConfigPath);
 		if (gameProject.ballConfigPath[0])   LoadBallConfig(gameProject.ballConfigPath);
-		if (gameProject.bombConfigPath[0])   LoadBombConfig(gameProject.bombConfigPath);
 		if (gameProject.menuConfigPath[0])   LoadMenuConfig(gameProject.menuConfigPath);
 		if (gameProject.stageCount > 0 && gameProject.stagePaths[0][0])
 			LoadStageConfig(gameProject.stagePaths[0]);

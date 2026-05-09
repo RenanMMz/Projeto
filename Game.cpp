@@ -124,11 +124,26 @@ void UpdateMenu()
             selectedMenuIndex = 0;
             currentState = GameState::STATE_DIFFICULTY_SELECT;
         }
+        else if (selectedMenuIndex == 1) {
+            currentState = GameState::STATE_OPTIONS;
+        }
         else if (selectedMenuIndex == 2) {
             PostQuitMessage(0);
         }
     }
     g_wasUpPressed = isUpPressed; g_wasDownPressed = isDownPressed; g_wasZPressed = isZPressed;
+}
+
+void UpdateOptions()
+{
+    // Saida via ESC volta para o menu principal. Demais inputs sao tratados pelo ImGui em RenderOptionsUI.
+    static bool s_wasEscPressed = false;
+    bool isEscPressed = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+    if (isEscPressed && !s_wasEscPressed) {
+        selectedMenuIndex = 1;
+        currentState = GameState::STATE_START_MENU;
+    }
+    s_wasEscPressed = isEscPressed;
 }
 
 // ==========================================
@@ -432,7 +447,6 @@ void UpdateDroppedItems()
             switch (d.type) {
             case 0: life++; break;         // vida
             case 1: break;                 // shield (placeholder)
-            case 2: break;                 // bomba  (placeholder)
             case 3: score += 50; break;    // pontos
             }
         }
@@ -593,6 +607,12 @@ void UpdateForceField()
 
 void UpdateDash()
 {
+    // Encerramento atrasado: se o timer expirou no ciclo anterior, desativa agora.
+    // Isso garante que o renderizador exiba o sprite de dash no frame em que dashTimer chega a 0.
+    if (dashTimer <= 0 && dashActive) {
+        dashActive = false; paddleHeight = paddleHeightNormal;
+        return;
+    }
     if (!dashActive) return;
     float sw = 0.25f, sh = 0.15f;
     float rx = paddleX - sw / 2.0f, ry = paddleY;
@@ -602,9 +622,6 @@ void UpdateDash()
     }
     paddleHeight = paddleHeightDash;
     dashTimer--;
-    if (dashTimer <= 0) {
-        dashActive = false; paddleHeight = paddleHeightNormal;
-    }
     paddleX += dashDir * dashSpeed;
 }
 

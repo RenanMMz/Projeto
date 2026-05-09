@@ -18,8 +18,6 @@ bool SaveBlockConfig(const char* fullPath);
 bool LoadBlockConfig(const char* fullPath);
 bool SaveBossConfig(const char* fullPath);
 bool LoadBossConfig(const char* fullPath);
-bool SaveBombConfig(const char* fullPath);
-bool LoadBombConfig(const char* fullPath);
 bool SaveMenuConfig(const char* fullPath);
 bool LoadMenuConfig(const char* fullPath);
 
@@ -30,7 +28,6 @@ void RenderEditorStage();
 void RenderEditorObstacle();
 void RenderEditorEnemy();
 void RenderEditorBoss();
-void RenderEditorBomb();
 void RenderEditorMenu();
 void RenderEditorUI();
 void RenderEditor();

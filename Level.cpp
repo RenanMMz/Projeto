@@ -21,7 +21,6 @@ static ID3D11ShaderResourceView* CacheLoadTexture(const char* path) {
 	s_textureCache[path] = srv;
 	return srv;
 }
-bool LoadBombConfig(const char* fullPath);
 bool LoadMenuConfig(const char* fullPath);
 
 void ClearLevel()
@@ -588,7 +587,6 @@ bool SaveGameProject(const char* fullPath)
 	f << "{\n";
 	f << "  \"playerConfig\": \"" << gameProject.playerConfigPath << "\",\n";
 	f << "  \"ballConfig\": \"" << gameProject.ballConfigPath << "\",\n";
-	f << "  \"bombConfig\": \"" << gameProject.bombConfigPath << "\",\n";
 	f << "  \"menuConfig\": \"" << gameProject.menuConfigPath << "\",\n";
 	f << "  \"stageCount\": " << gameProject.stageCount << ",\n";
 	f << "  \"stages\": [\n";
@@ -610,7 +608,6 @@ void ApplyProjectConfigs()
 {
 	if (gameProject.playerConfigPath[0]) LoadPlayerConfig(gameProject.playerConfigPath);
 	if (gameProject.ballConfigPath[0])   LoadBallConfig(gameProject.ballConfigPath);
-	if (gameProject.bombConfigPath[0])   LoadBombConfig(gameProject.bombConfigPath);
 	if (gameProject.menuConfigPath[0])   LoadMenuConfig(gameProject.menuConfigPath);
 
 	// Stages: carrega o primeiro stage (stage 0) se existir
@@ -639,7 +636,6 @@ bool LoadGameProject(const char* fullPath)
 			};
 		readStr("\"playerConfig\"", gameProject.playerConfigPath);
 		readStr("\"ballConfig\"", gameProject.ballConfigPath);
-		readStr("\"bombConfig\"", gameProject.bombConfigPath);
 		readStr("\"menuConfig\"", gameProject.menuConfigPath);
 
 		if (line.find("\"stageCount\"") != std::string::npos)

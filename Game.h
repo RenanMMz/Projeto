@@ -8,6 +8,7 @@ void InitGameplay(int selectedDifficulty, int selectedLives);
 void UpdateDiffSelect();
 void UpdateIFrame();
 void UpdateMenu();
+void UpdateOptions();
 void UpdatePaddle();
 void UpdateBall();
 void UpdateEnemyBullet();

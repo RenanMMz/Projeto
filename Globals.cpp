@@ -2,6 +2,8 @@
 
 // DirectX
 HWND g_hWnd = nullptr;
+int  g_currentWidth = 800;
+int  g_currentHeight = 600;
 IDXGISwapChain* swapChain = nullptr;
 ID3D11Device* device = nullptr;
 ID3D11DeviceContext* deviceContext = nullptr;
@@ -44,8 +46,10 @@ ID3D11ShaderResourceView* editorPlayerTexture = nullptr;
 ID3D11ShaderResourceView* editorBallTexture = nullptr;
 ID3D11ShaderResourceView* editorBlockTexture = nullptr;
 ID3D11ShaderResourceView* editorBossTexture = nullptr;
-ID3D11ShaderResourceView* editorPlayerRunRightTexture = nullptr;
-ID3D11ShaderResourceView* editorPlayerRunLeftTexture = nullptr;
+ID3D11ShaderResourceView* editorPlayerRunRightTexture  = nullptr;
+ID3D11ShaderResourceView* editorPlayerRunLeftTexture   = nullptr;
+ID3D11ShaderResourceView* editorPlayerDashRightTexture = nullptr;
+ID3D11ShaderResourceView* editorPlayerDashLeftTexture  = nullptr;
 ID3D11ShaderResourceView* editorProjectileTexture = nullptr;
 ID3D11InputLayout* inputLayoutTextured = nullptr;
 ID3D11BlendState* alphaBlendState = nullptr;
@@ -53,7 +57,7 @@ ID3D11BlendState* alphaBlendState = nullptr;
 GameState  currentState = STATE_START_MENU;
 EditorMode currentEditorMode = EDITOR_MODE_PLAYER;
 int selectedMenuIndex = 0;
-const char* mainMenuItems[] = { "Start", "Options", "Close" };
+const char* mainMenuItems[] = { "Jogar", "Configuracoes", "Sair" };
 const int   mainMenuCount = 3;
 int  difficulty = 0;
 const int difficultyCount = 4;
@@ -178,15 +182,6 @@ PlayerSpriteConfig editorPlayerConfig = {
 
 // Ball sprite
 BallSpriteConfig editorBallConfig = { "", 0.02f };
-
-// Bomba
-BombConfig editorBombConfig = {
-	"bomb_default", "",
-	0,       // habilidade
-	0.4f,    // radius
-	1.0f,    // damage
-	120      // duration
-};
 
 // Menu
 MenuConfig editorMenuConfig = {

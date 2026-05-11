@@ -546,6 +546,33 @@ void UpdateProjectiles()
     for (auto& p : projectiles) {
         if (!p.active) continue;
         p.y += projectileSpeed;
+
+        //AABB do projétil do player
+        float pLeft = p.x - projectileSize;
+        float pRight = p.x + projectileSize;
+        float pTop = p.y + projectileSize;
+        float pBottom = p.y - projectileSize;
+
+        //Loop de colisão com projéteis inimigos
+        for (auto& b : enemyBullets)
+        {
+            if (!b.active) continue;
+
+            //AABB do projétil inimigo
+            float bLeft = b.x - b.size;
+            float bRight = b.x + b.size;
+            float bTop = b.y + b.size;
+            float bBottom = b.y - b.size;
+
+            //Interseção AABB entre tiros de player e inimigos
+            if (pLeft < bRight && pRight > bLeft && pBottom < bTop && pTop > bBottom)
+            {
+                p.active = false; // Destrói o tiro do jogador
+                b.active = false; // Destrói a bala inimiga
+                break;
+            }
+        }
+
         float expandedSize = ballSize * 2.0f;
         if (p.x >= ballX - expandedSize && p.x <= ballX + expandedSize &&
             p.y >= ballY - expandedSize && p.y <= ballY + expandedSize)
@@ -709,6 +736,12 @@ void UpdateGameplay()
     }
     if (paddleX - paddleWidth / 2 < -0.90f) paddleX = -0.90f + paddleWidth / 2;
     if (paddleX + paddleWidth / 2 > 0.90f) paddleX = 0.90f - paddleWidth / 2;
+
+    enemyBullets.erase(std::remove_if(enemyBullets.begin(), enemyBullets.end(),
+        [](const EnemyBullet& b)
+        {
+            return !b.active;
+        }), enemyBullets.end());
 
     UpdatePaddle();
     UpdateEnemyMovement();

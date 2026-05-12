@@ -1,12 +1,55 @@
+# Visual Studio cache
+.vs/
 .vscode/settings.json
-/.vs
-/TG/x64/Debug/TG.tlog
-/packages/directxtk_desktop_win10.2025.10.28.2
+
+# Build output folders
+Debug/
+Release/
+x64/
+x86/
+TG/x64/
+
+# Compiled object files
 *.obj
-*.log
-*.idb
+*.obj.enc
+
+# Linker files
+*.ilk
+*.lib
+*.exp
+
+# Executables and binaries
+*.dll
+
+# Debug symbols and databases
 *.pdb
-*.exe
+*.idb
+
+# Logs
+*.log
+
+# Build metadata
+*.recipe
+*.tlog
+*.FileListAbsolute.txt
+
+# NuGet packages
+packages/
+!packages.config
+
+# ImGui runtime config (auto-generated)
+imgui.ini
+
+# User-specific project settings
+*.vcxproj.user
+
+# Old solution format (project uses .slnx)
 *.sln
-/.gitignore
-/.gitignore
+
+# Precompiled headers
+*.gch
+*.pch
+
+# Root-level build artifacts
+/vc140.pdb
+/renderDirectX.ilk

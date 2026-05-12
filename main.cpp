@@ -15,6 +15,18 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
 	if (ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam)) return true;
 	switch (message) {
+	case WM_SIZE: {
+		if (wParam != SIZE_MINIMIZED) {
+			int newW = LOWORD(lParam);
+			int newH = HIWORD(lParam);
+			if (newW > 0 && newH > 0) {
+				g_currentWidth  = newW;
+				g_currentHeight = newH;
+				if (device) ResizeViewport(newW, newH);
+			}
+		}
+		return 0;
+	}
 	case WM_DESTROY: PostQuitMessage(0); return 0;
 	}
 	return DefWindowProc(hWnd, message, wParam, lParam);
@@ -73,8 +85,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 				eWasPressed = ePressed;
 
 				switch (currentState) {
-				case GameState::STATE_START_MENU: UpdateMenu(); RenderMenu(); break;
+				case GameState::STATE_START_MENU:
+					UpdateMenu(); RenderMenu();
+					DrawMenuText(g_hWnd);
+					break;
 				case GameState::STATE_DIFFICULTY_SELECT: UpdateDiffSelect(); RenderDiffSelect(); break;
+				case GameState::STATE_OPTIONS:
+					UpdateOptions(); RenderOptions();
+					break;
 				case GameState::STATE_GAMEPLAY:
 					UpdateGameplay(); RenderGameplay();
 					DrawScore(g_hWnd, score); DrawBlocksRemaining(g_hWnd, blocksRemaining); DrawLives(g_hWnd, life); DrawStage(g_hWnd, stage);
@@ -85,6 +103,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 				}
 				if (currentState == GameState::STATE_EDITOR) {
 					RenderEditorUI();
+				}
+				else if (currentState == GameState::STATE_OPTIONS) {
+					RenderOptionsUI();
 				}
 				else {
 					RenderDebugUI();

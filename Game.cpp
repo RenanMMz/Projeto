@@ -618,6 +618,27 @@ void UpdateForceField()
         forceFieldActive = false; return;
     }
 
+    for (auto& bullet : enemyBullets)
+    {
+        if (!bullet.active) continue;
+
+        //Distância vetorial entre o centro do campo e a bala
+        float dx = bullet.x - forceFieldX;
+        float dy = bullet.y - forceFieldY;
+
+        //Distância ao quadrado
+        float distanceSq = (dx * dx) + (dy * dy);
+
+        //Raio ao quadrado
+        float radiusSq = forceFieldRadius * forceFieldRadius;
+
+        if (distanceSq <= radiusSq)
+        {
+            bullet.active = false;
+        }
+    }
+
+
     float dx = ballX - forceFieldX, dy = ballY - forceFieldY;
     float distSq = dx * dx + dy * dy, minDist = forceFieldRadius + ballSize;
     if (distSq < minDist * minDist) {
@@ -973,6 +994,36 @@ void UpdateGameplay()
         {
             return !b.active;
         }), enemyBullets.end());
+
+    droppedItems.erase(std::remove_if(droppedItems.begin(), droppedItems.end(),
+        [](const DroppedItem& d)
+        {
+            return !d.active;
+        }), droppedItems.end());
+
+    blocks.erase(std::remove_if(blocks.begin(), blocks.end(),
+        [](const Block& b)
+        {
+            return !b.active;
+        }), blocks.end());
+
+    projectiles.erase(std::remove_if(projectiles.begin(), projectiles.end(),
+        [](const Projectile& p)
+        {
+            return !p.active;
+        }), projectiles.end());
+
+    portals.erase(std::remove_if(portals.begin(), portals.end(),
+        [](const Portal& tp)
+        {
+            return !tp.active;
+        }), portals.end());
+
+    obstacles.erase(std::remove_if(obstacles.begin(),obstacles.end(),
+        [](const Obstacle& o)
+        {
+            return !o.active;
+        }), obstacles.end());
 
     UpdatePaddle();
     UpdateEnemyMovement();

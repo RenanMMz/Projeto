@@ -618,6 +618,27 @@ void UpdateForceField()
         forceFieldActive = false; return;
     }
 
+    for (auto& bullet : enemyBullets)
+    {
+        if (!bullet.active) continue;
+
+        //Distância vetorial entre o centro do campo e a bala
+        float dx = bullet.x - forceFieldX;
+        float dy = bullet.y - forceFieldY;
+
+        //Distância ao quadrado
+        float distanceSq = (dx * dx) + (dy * dy);
+
+        //Raio ao quadrado
+        float radiusSq = forceFieldRadius * forceFieldRadius;
+
+        if (distanceSq <= radiusSq)
+        {
+            bullet.active = false;
+        }
+    }
+
+
     float dx = ballX - forceFieldX, dy = ballY - forceFieldY;
     float distSq = dx * dx + dy * dy, minDist = forceFieldRadius + ballSize;
     if (distSq < minDist * minDist) {

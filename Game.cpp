@@ -998,6 +998,12 @@ void UpdateGameplay()
             return !tp.active;
         }), portals.end());
 
+    obstacles.erase(std::remove_if(obstacles.begin(),obstacles.end(),
+        [](const Obstacle& o)
+        {
+            return !o.active;
+        }), obstacles.end());
+
     UpdatePaddle();
     UpdateEnemyMovement();
     UpdateBall();

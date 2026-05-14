@@ -974,6 +974,30 @@ void UpdateGameplay()
             return !b.active;
         }), enemyBullets.end());
 
+    droppedItems.erase(std::remove_if(droppedItems.begin(), droppedItems.end(),
+        [](const DroppedItem& d)
+        {
+            return !d.active;
+        }), droppedItems.end());
+
+    blocks.erase(std::remove_if(blocks.begin(), blocks.end(),
+        [](const Block& b)
+        {
+            return !b.active;
+        }), blocks.end());
+
+    projectiles.erase(std::remove_if(projectiles.begin(), projectiles.end(),
+        [](const Projectile& p)
+        {
+            return !p.active;
+        }), projectiles.end());
+
+    portals.erase(std::remove_if(portals.begin(), portals.end(),
+        [](const Portal& tp)
+        {
+            return !tp.active;
+        }), portals.end());
+
     UpdatePaddle();
     UpdateEnemyMovement();
     UpdateBall();

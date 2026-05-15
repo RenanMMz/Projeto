@@ -1,6 +1,7 @@
 # Visual Studio cache
 .vs/
 .vscode/settings.json
+.claude/
 
 # Build output folders
 Debug/

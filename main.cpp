@@ -154,9 +154,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 				switch (currentState) {
 				case GameState::STATE_START_MENU:
 					UpdateMenu(); RenderMenu();
-					DrawMenuText(g_hWnd);
 					break;
-				case GameState::STATE_DIFFICULTY_SELECT: UpdateDiffSelect(); RenderDiffSelect(); break;
 				case GameState::STATE_OPTIONS:
 					UpdateOptions(); RenderOptions();
 					break;
@@ -175,8 +173,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 					break;
 				}
 
-				// Overlay ImGui — totalmente suprimido em standalone.
-				if (g_isEditorEnabled) {
+				// Overlay ImGui — em STATE_START_MENU sobrepoe-se o texto dos
+				// botoes (substitui o antigo DrawMenuText via GDI, que provocava
+				// flicker entre o desenho do backbuffer e o Present).
+				if (currentState == GameState::STATE_START_MENU) {
+					RenderMenuTextOverlay();
+				}
+				else if (g_isEditorEnabled) {
 					if (currentState == GameState::STATE_EDITOR) {
 						RenderEditorUI();
 					}

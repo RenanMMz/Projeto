@@ -312,6 +312,14 @@ struct MenuConfig {
 	char  selectorTexturePath[256];
 	float logoX, logoY;
 	float logoWidth, logoHeight;
+
+	// Tipografia do texto dos botoes do menu principal (RenderMenuTextOverlay).
+	// fontPath aceita um caminho para um arquivo TrueType (.ttf); vazio usa
+	// a fonte default do ImGui.
+	float textColorR, textColorG, textColorB, textColorA;
+	float textSelectedColorR, textSelectedColorG, textSelectedColorB, textSelectedColorA;
+	float textSize;          // em pixels
+	char  fontPath[256];
 };
 
 // ==========================================

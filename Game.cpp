@@ -71,6 +71,12 @@ void InitGameplay(int selectedDifficulty, int selectedLives)
     combo = 0; score = 0;
     paddleX = 0.0f; paddleWidth = paddleEditWidth; paddleHeight = paddleHeightNormal;
 
+    // Garantia defensiva: limpa todas as colecoes de entidades antes da
+    // reinicializacao do estagio. InitStage chamara o pipeline de populacao,
+    // que tambem invoca ClearLevel, mas esta chamada extra elimina qualquer
+    // estado residual de sessoes anteriores (ex: retorno ao menu apos game over).
+    ClearLevel();
+
     InitStage(stage);  // InitStage define ballVelX/Y a partir do editorStageConfig
 
     // Aplica velocidade inicial configurada pelo editor APÓS o InitStage

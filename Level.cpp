@@ -23,16 +23,27 @@ static ID3D11ShaderResourceView* CacheLoadTexture(const char* path) {
 }
 bool LoadMenuConfig(const char* fullPath);
 bool LoadBossConfig(const char* fullPath);
+bool LoadPortalConfig(const char* fullPath);
 
 void ClearLevel()
 {
+	// Limpa todas as colecoes de entidades runtime. As SRVs referenciadas
+	// (textureSRV em Block, Obstacle, Portal) pertencem ao s_textureCache
+	// e nao sao liberadas aqui: o cache mantem a propriedade ate o shutdown
+	// (ClearTextureCache em CleanD3D). Apenas as visualizacoes runtime sao
+	// descartadas, preservando a possibilidade de recarregamento eficiente.
 	blocks.clear();
 	obstacles.clear();
 	projectiles.clear();
 	enemyBullets.clear();
 	droppedItems.clear();
+	portals.clear();
 	blocksRemaining = 0;
 	blocksInitialCount = 0;
+	// Reset de estado de transito do portal e timers correlatos.
+	ballInTransit = false;
+	portalTimer = 0;
+	portalCooldown = 0;
 }
 
 // Cria um bloco a partir de um BlockConfig carregado do editor
@@ -443,6 +454,28 @@ void PopulateGameplayFromStageObjects()
 		else if (o.type == PLACED_BALLSPAWN) {
 			editorStageConfig.ballStartX = o.x;
 			editorStageConfig.ballStartY = o.y;
+		}
+		else if (o.type == PLACED_PORTAL) {
+			// Instancia o portal no vetor runtime `portals`. O campo
+			// `configFile` do PlacedObject aponta para o JSON de configuracao
+			// produzido pela aba "Portal" do editor; LoadPortalConfig preenche
+			// editorPortalConfig (sprite, largura, altura) e estes valores sao
+			// copiados para o Portal runtime.
+			if (o.configFile[0] != '\0')
+				LoadPortalConfig(o.configFile);
+
+			Portal p = {};
+			p.x = o.x;
+			p.y = o.y;
+			p.width  = (editorPortalConfig.width  > 0.0f) ? editorPortalConfig.width  : 0.10f;
+			p.height = (editorPortalConfig.height > 0.0f) ? editorPortalConfig.height : 0.15f;
+			p.active = true;
+			strncpy_s(p.spritePath, sizeof(p.spritePath),
+				editorPortalConfig.spritePath, _TRUNCATE);
+			if (p.spritePath[0] != '\0') {
+				p.textureSRV = CacheLoadTexture(p.spritePath);
+			}
+			portals.push_back(p);
 		}
 	}
 }

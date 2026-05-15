@@ -2,6 +2,8 @@
 #include <sstream>
 #include <cmath>
 #include <functional>
+#include <filesystem>
+#include <string>
 #include "Editor.h"
 #include "Render.h"
 #include <windows.h>
@@ -293,6 +295,10 @@ void UpdateEditor()
 						else if (o.type == PLACED_BOSS) {
 							hw = (editorBossConfig.width > 0 ? editorBossConfig.width : 0.2f) / 2.0f;
 							hh = (editorBossConfig.height > 0 ? editorBossConfig.height : 0.2f) / 2.0f;
+						}
+						else if (o.type == PLACED_PORTAL) {
+							hw = (editorPortalConfig.width  > 0 ? editorPortalConfig.width  : 0.10f) / 2.0f;
+							hh = (editorPortalConfig.height > 0 ? editorPortalConfig.height : 0.15f) / 2.0f;
 						}
 						if (ndcX >= o.x - hw && ndcX <= o.x + hw &&
 							ndcY >= o.y - hh && ndcY <= o.y + hh) {
@@ -1014,7 +1020,11 @@ void RenderEditorStage()
 
 	// Lista de objetos colocados
 	if (ImGui::CollapsingHeader("Objetos no Estagio")) {
-		const char* typeNames[] = { "Inimigo", "Obstaculo", "Boss", "Spawn Bola" };
+		// ATENCAO: a ordem deve corresponder exatamente ao enum PlacedObjectType
+		// (Globals.h). Tamanho minimo == numero de valores do enum + 1, sob pena de
+		// out-of-bounds read em typeNames[o.type] linhas abaixo (causou crash
+		// 0xC0000005 em ucrtbased.dll quando PLACED_PORTAL=4 foi adicionado).
+		const char* typeNames[] = { "Inimigo", "Obstaculo", "Boss", "Spawn Bola", "Portal" };
 
 		// Botoes de adicionar
 		if (ImGui::Button("+ Inimigo (JSON)")) {
@@ -1051,15 +1061,31 @@ void RenderEditorStage()
 				stageObjects.push_back(po);
 			}
 		}
+		ImGui::SameLine();
+		if (ImGui::Button("+ Portal (JSON)")) {
+			char p[MAX_PATH] = {};
+			if (OpenJsonLoadDialog(p, MAX_PATH, "objects\\PORTAL")) {
+				PlacedObject po = {}; po.type = PLACED_PORTAL; po.x = 0.0f; po.y = 0.0f;
+				strncpy_s(po.configFile, 256, p, 255);
+				const char* slash = strrchr(p, '\\'); const char* name = slash ? slash + 1 : p;
+				strncpy_s(po.displayName, 64, name, 63);
+				stageObjects.push_back(po);
+			}
+		}
 
 		ImGui::Separator();
 		ImGui::TextDisabled("Arraste X/Y para reposicionar. Del = remover.");
 		ImGui::Separator();
 
+		const int kTypeCount = (int)(sizeof(typeNames) / sizeof(typeNames[0]));
 		for (int i = 0; i < (int)stageObjects.size(); i++) {
 			auto& o = stageObjects[i];
 			ImGui::PushID(i);
-			ImGui::Text("[%s] %s", typeNames[(int)o.type], o.displayName);
+			// Clamp defensivo do indice: evita out-of-bounds caso o enum
+			// PlacedObjectType cresca sem atualizacao desta tabela.
+			int ti = (int)o.type;
+			const char* tname = (ti >= 0 && ti < kTypeCount) ? typeNames[ti] : "?";
+			ImGui::Text("[%s] %s", tname, o.displayName);
 			ImGui::SameLine();
 			ImGui::SetNextItemWidth(80);
 			ImGui::DragFloat("X##ox", &o.x, 0.01f, -1.0f, 1.0f, "%.2f");
@@ -1506,6 +1532,69 @@ void RenderEditorMenu()
 }
 
 // ==========================================
+// SAVE / LOAD — PORTAL
+// ==========================================
+
+bool SavePortalConfig(const char* fullPath)
+{
+	std::ofstream f(fullPath); if (!f.is_open()) return false;
+	f << "{\n";
+	f << "  \"texturePath\": \"" << editorPortalConfig.spritePath << "\",\n";
+	f << "  \"width\": "  << editorPortalConfig.width  << ",\n";
+	f << "  \"height\": " << editorPortalConfig.height << "\n";
+	f << "}\n";
+	f.close();
+	return true;
+}
+
+bool LoadPortalConfig(const char* fullPath)
+{
+	std::ifstream f(fullPath); if (!f.is_open()) return false;
+	std::string line;
+	while (std::getline(f, line)) {
+		if (line.find("\"width\"")  != std::string::npos) sscanf_s(line.c_str(), " \"width\": %f,",  &editorPortalConfig.width);
+		if (line.find("\"height\"") != std::string::npos) sscanf_s(line.c_str(), " \"height\": %f,", &editorPortalConfig.height);
+		if (line.find("\"texturePath\"") != std::string::npos) {
+			size_t s = line.find(": \"") + 3, e = line.rfind("\"");
+			if (s < e) {
+				std::string v = line.substr(s, e - s);
+				strcpy_s(editorPortalConfig.spritePath, 256, v.c_str());
+			}
+		}
+	}
+	f.close();
+	return true;
+}
+
+// ==========================================
+// PAINEL — PORTAL
+// Edicao do template do portal (sprite + dimensoes) e persistencia em JSON.
+// A insercao de portais no estagio e' feita na aba "Stage", por meio do
+// botao "+ Portal (JSON)", que aceita um arquivo de configuracao previamente
+// salvo aqui. Esta separacao centraliza a montagem do estagio na aba Stage,
+// em paralelo as demais entidades (Inimigo, Obstaculo, Boss).
+// ==========================================
+void RenderEditorPortal()
+{
+	ImGui::Text("=== EDITOR DE PORTAL ===");
+	ImGui::Separator();
+
+	TextureButton("Sprite", editorPortalConfig.spritePath, 256, "spr_portal");
+
+	ImGui::SliderFloat("Largura##portal", &editorPortalConfig.width,  0.02f, 0.50f);
+	ImGui::SliderFloat("Altura##portal",  &editorPortalConfig.height, 0.02f, 0.80f);
+
+	ImGui::Separator();
+	{
+		char sp[MAX_PATH] = {}, lp[MAX_PATH] = {}; bool ds, dl;
+		if (JsonSaveLoadButtons("objects\\PORTAL", sp, MAX_PATH, lp, MAX_PATH, &ds, &dl)) {
+			if (ds) SavePortalConfig(sp);
+			if (dl) LoadPortalConfig(lp);
+		}
+	}
+}
+
+// ==========================================
 // RENDER DO EDITOR (tabs + viewport)
 // ==========================================
 
@@ -1579,6 +1668,11 @@ void RenderEditorUI_NoNewFrame()
 				currentEditorMode = EDITOR_MODE_MENU;     editorDemoActive = false;
 			} RenderEditorMenu();     ImGui::EndTabItem();
 		}
+		if (ImGui::BeginTabItem("Portal")) {
+			if (currentEditorMode != EDITOR_MODE_PORTAL) {
+				currentEditorMode = EDITOR_MODE_PORTAL;   editorDemoActive = false;
+			} RenderEditorPortal();   ImGui::EndTabItem();
+		}
 		ImGui::EndTabBar();
 	}
 	ImGui::End();
@@ -1595,6 +1689,208 @@ void RenderEditorUI()
 // ==========================================
 // PAINEL � PROJETO
 // ==========================================
+
+// ==========================================
+// EXPORTACAO STANDALONE
+// ----------------------------------------------------------------------
+// Empacota o jogo como executavel distribuivel: copia o binario, as DLLs
+// do CRT, as texturas (Assets/) e todos os configs (objects/), e reescreve
+// os caminhos absolutos dos JSONs para caminhos relativos a' raiz do
+// pacote (formato "Assets\\..." em vez de "C:\\Users\\...\\TorrouEngine\\Assets\\...").
+// ==========================================
+
+namespace fs = std::filesystem;
+
+// Mensagem persistente exibida apos a exportacao (sucesso ou erro).
+static std::string s_exportStatus;
+
+// Abre o dialogo nativo de selecao de pasta e devolve o caminho escolhido.
+// IMPORTANTE: o motor inicializa COM em modo MTA (COINIT_MULTITHREADED em
+// main.cpp), enquanto a Shell exige STA para o dialogo moderno (BIF_NEWDIALOGSTYLE).
+// Por isso usa-se o dialogo classico, sem BIF_NEWDIALOGSTYLE — compativel com
+// MTA, ainda que visualmente menos polido.
+static bool PickFolderDialog(char* outPath, int maxLen)
+{
+	if (!outPath || maxLen <= 0) return false;
+	outPath[0] = '\0';
+
+	BROWSEINFOA bi = {};
+	bi.hwndOwner = g_hWnd;
+	bi.pszDisplayName = nullptr;
+	bi.lpszTitle = "Selecione a pasta de destino do pacote standalone";
+	bi.ulFlags = BIF_RETURNONLYFSDIRS; // sem BIF_NEWDIALOGSTYLE para evitar conflito MTA
+
+	LPITEMIDLIST pidl = SHBrowseForFolderA(&bi);
+	if (!pidl) return false; // usuario cancelou
+
+	bool ok = (SHGetPathFromIDListA(pidl, outPath) != FALSE);
+
+	// Liberacao do PIDL: em modo MTA evita-se SHGetMalloc (que faz QueryInterface
+	// e pode interferir com o apartment atual). Usa-se CoTaskMemFree, que e' o
+	// alocador compativel com itens retornados pela Shell.
+	CoTaskMemFree(pidl);
+
+	return ok && outPath[0] != '\0' && (int)strlen(outPath) < maxLen;
+}
+
+// Substitui todas as ocorrencias de `from` por `to` num arquivo de texto.
+static bool ReplaceAllInTextFile(const fs::path& path,
+                                 const std::string& from,
+                                 const std::string& to)
+{
+	std::ifstream in(path, std::ios::binary);
+	if (!in.is_open()) return false;
+	std::stringstream ss; ss << in.rdbuf();
+	in.close();
+	std::string content = ss.str();
+	if (from.empty()) return true;
+	size_t pos = 0;
+	while ((pos = content.find(from, pos)) != std::string::npos) {
+		content.replace(pos, from.size(), to);
+		pos += to.size();
+	}
+	std::ofstream out(path, std::ios::binary | std::ios::trunc);
+	if (!out.is_open()) return false;
+	out << content;
+	return true;
+}
+
+// Constroi o prefixo do basePath ja escapado para JSON (cada '\' -> "\\\\").
+static std::string BuildJsonEscapedPrefix(const std::string& path)
+{
+	std::string out;
+	for (char c : path) {
+		if (c == '\\') out += "\\\\"; // dois bytes literais
+		else out += c;
+	}
+	return out;
+}
+
+// Funcao principal: empacota o jogo no diretorio destino.
+// Retorna mensagem de status (vazio em caso de cancelamento).
+static std::string ExportStandalone(const std::string& destFolder)
+{
+	if (destFolder.empty()) return "";
+	try {
+		fs::path dst(destFolder);
+		if (!fs::exists(dst)) fs::create_directories(dst);
+		const fs::path dstAbs = fs::absolute(dst).lexically_normal();
+
+		// 1) Binario atual (TG.exe) e diretorio que o contem.
+		char exeBuf[MAX_PATH] = {};
+		GetModuleFileNameA(nullptr, exeBuf, MAX_PATH);
+		fs::path exePath(exeBuf);
+		fs::path exeDir = exePath.parent_path();
+
+		// Guarda anti-recursao: o destino nao pode ser, nem estar contido em,
+		// nem conter, o diretorio do exe ou o engineBase (Documents\TorrouEngine).
+		// Sem isto, fs::copy recursive entraria em loop ao copiar Assets/objects.
+		auto isPrefix = [](const fs::path& parent, const fs::path& child) {
+			auto p = parent.lexically_normal();
+			auto c = child.lexically_normal();
+			auto mismatch = std::mismatch(p.begin(), p.end(), c.begin(), c.end());
+			return mismatch.first == p.end();
+		};
+		const fs::path engineBaseAbs = fs::absolute(fs::path(GetEngineBasePath())).lexically_normal();
+		const fs::path exeDirAbs     = fs::absolute(exeDir).lexically_normal();
+		if (isPrefix(exeDirAbs, dstAbs) || isPrefix(dstAbs, exeDirAbs) ||
+			isPrefix(engineBaseAbs, dstAbs) || isPrefix(dstAbs, engineBaseAbs)) {
+			return "Falha: a pasta de destino nao pode coincidir, conter ou estar contida "
+			       "na pasta do executavel ou em Documents\\TorrouEngine. "
+			       "Escolha um diretorio independente (ex: C:\\Distribuicao\\MeuJogo).";
+		}
+
+		// 2) Copia o executavel.
+		fs::copy_file(exePath, dst / exePath.filename(),
+			fs::copy_options::overwrite_existing);
+
+		// 3) DLLs do CRT (Debug). Em Release algumas dessas nem existem;
+		//    a ausencia e' silenciosa para nao bloquear a exportacao.
+		char sysDir[MAX_PATH] = {};
+		GetSystemDirectoryA(sysDir, MAX_PATH);
+		const char* dlls[] = {
+			"vcruntime140d.dll", "vcruntime140_1d.dll",
+			"msvcp140d.dll",     "ucrtbased.dll",
+			"vcruntime140.dll",  "vcruntime140_1.dll",
+			"msvcp140.dll",      "ucrtbase.dll"
+		};
+		int dllsCopiadas = 0;
+		for (const char* d : dlls) {
+			fs::path s = fs::path(sysDir) / d;
+			if (fs::exists(s)) {
+				fs::copy_file(s, dst / d, fs::copy_options::overwrite_existing);
+				dllsCopiadas++;
+			}
+		}
+
+		// 4) Replicar Assets/ e objects/ a partir de Documents\TorrouEngine.
+		fs::path engineBase(GetEngineBasePath());
+		const fs::path assetsSrc  = engineBase / "Assets";
+		const fs::path objectsSrc = engineBase / "objects";
+		if (fs::exists(assetsSrc)) {
+			fs::copy(assetsSrc, dst / "Assets",
+				fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+		}
+		if (fs::exists(objectsSrc)) {
+			fs::copy(objectsSrc, dst / "objects",
+				fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+		}
+
+		// 5) Copia o game_config.json ativo (na CWD do .exe atual).
+		fs::path gameCfgSrc = exeDir / "game_config.json";
+		if (!fs::exists(gameCfgSrc)) {
+			// fallback: usa a variavel global gameProjectPath, que pode ser
+			// um caminho absoluto definido pela ultima sessao de edicao.
+			gameCfgSrc = fs::absolute(gameProjectPath);
+		}
+		if (fs::exists(gameCfgSrc)) {
+			fs::copy_file(gameCfgSrc, dst / "game_config.json",
+				fs::copy_options::overwrite_existing);
+		}
+
+		// 6) Gera config.json sinalizando modo standalone.
+		{
+			std::ofstream f((dst / "config.json").string(),
+				std::ios::binary | std::ios::trunc);
+			f << "{\n  \"standalone\": true\n}\n";
+		}
+
+		// 7) Reescreve paths absolutos em todos os .json copiados.
+		// Substitui o prefixo do engineBase por nada — os paths viram
+		// relativos a' raiz do pacote (ex: "Assets\\sprite.png").
+		const std::string baseStr = engineBase.string();
+		const std::string prefixEscaped = BuildJsonEscapedPrefix(baseStr) + "\\\\";
+		const std::string prefixForward = baseStr + "/";
+		// Tambem cobre o caso em que a barra final aparece como '\\' (1 byte
+		// no JSON, raro mas possivel em saves manuais).
+		const std::string prefixRaw = baseStr + "\\";
+
+		int reescritos = 0;
+		for (auto& entry : fs::recursive_directory_iterator(dst)) {
+			if (!entry.is_regular_file()) continue;
+			if (entry.path().extension() != ".json") continue;
+			ReplaceAllInTextFile(entry.path(), prefixEscaped, "");
+			ReplaceAllInTextFile(entry.path(), prefixForward, "");
+			ReplaceAllInTextFile(entry.path(), prefixRaw, "");
+			reescritos++;
+		}
+
+		char msg[512];
+		sprintf_s(msg, sizeof(msg),
+			"Exportacao concluida.\n"
+			"  Destino: %s\n"
+			"  DLLs CRT copiadas: %d\n"
+			"  JSONs reescritos: %d\n"
+			"Verifique o config.json e abra o TG.exe na pasta.",
+			destFolder.c_str(), dllsCopiadas, reescritos);
+		return msg;
+	}
+	catch (const std::exception& ex) {
+		std::string m = "Falha na exportacao: ";
+		m += ex.what();
+		return m;
+	}
+}
 
 void RenderEditorProject()
 {
@@ -1701,6 +1997,54 @@ void RenderEditorProject()
 	if (ImGui::BeginPopupModal("OK_Proj", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
 		ImGui::Text("Projeto salvo em:\n%s", gameProjectPath);
 		if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
+
+	// ==========================================
+	// EXPORTACAO STANDALONE
+	// ==========================================
+	ImGui::Separator();
+	ImGui::TextDisabled("Distribuicao");
+	ImGui::TextWrapped(
+		"Gera um pacote autocontido (executavel + DLLs do CRT + Assets + objects + "
+		"game_config.json + config.json com standalone=true). Os caminhos absolutos "
+		"das texturas e configs sao reescritos para caminhos relativos a' pasta de destino.");
+
+	// Buffer persistente para o campo de path. Permite ao usuario digitar
+	// manualmente ou aproveitar o ultimo destino escolhido entre cliques.
+	static char s_exportDest[MAX_PATH] = {};
+
+	ImGui::TextDisabled("Pasta de destino:");
+	ImGui::PushItemWidth(-90);
+	ImGui::InputText("##expdest", s_exportDest, sizeof(s_exportDest));
+	ImGui::PopItemWidth();
+	ImGui::SameLine();
+	if (ImGui::Button("Procurar...", ImVec2(80, 0))) {
+		char picked[MAX_PATH] = {};
+		if (PickFolderDialog(picked, MAX_PATH)) {
+			strncpy_s(s_exportDest, picked, sizeof(s_exportDest) - 1);
+		}
+	}
+
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.55f, 0.25f, 1.0f));
+	const bool canExport = (s_exportDest[0] != '\0');
+	if (!canExport) ImGui::BeginDisabled();
+	if (ImGui::Button("Exportar para Standalone", ImVec2(-1, 0))) {
+		s_exportStatus = ExportStandalone(s_exportDest);
+		if (!s_exportStatus.empty()) ImGui::OpenPopup("Resultado_Export");
+	}
+	if (!canExport) ImGui::EndDisabled();
+	ImGui::PopStyleColor();
+
+	if (!canExport) {
+		ImGui::TextDisabled("Informe ou selecione uma pasta para habilitar.");
+	}
+
+	if (ImGui::BeginPopupModal("Resultado_Export", nullptr,
+		ImGuiWindowFlags_AlwaysAutoResize)) {
+		ImGui::TextUnformatted(s_exportStatus.c_str());
+		ImGui::Separator();
+		if (ImGui::Button("OK", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
 		ImGui::EndPopup();
 	}
 }

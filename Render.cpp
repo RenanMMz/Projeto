@@ -183,49 +183,127 @@ void DrawBlocksRemaining(HWND hwnd, int blocksRemaining) {
 	wchar_t buffer[32]; swprintf(buffer, 32, L"Blocks Remaining: %d", blocksRemaining); TextOutW(hdc, 200, 10, buffer, (int)wcslen(buffer)); ReleaseDC(hwnd, hdc);
 }
 
-// Desenha os labels do menu principal sobre os botoes via GDI (TextOutW).
-// Os escapes \xNNNN evitam dependencia do encoding do arquivo-fonte (cedilha/til).
-void DrawMenuText(HWND hwnd) {
-	static const wchar_t* s_labelsW[] = {
-		L"Jogar",
-		L"Configura" L"\x00E7" L"\x00F5" L"es",
-		L"Sair"
-	};
-	const int labelCount = (int)(sizeof(s_labelsW) / sizeof(s_labelsW[0]));
+// ==========================================
+// Carregamento lazy da fonte customizada do menu.
+// ----------------------------------------------------------------------
+// O ImGui mantem um atlas global de fontes (io.Fonts). Para trocar a
+// familia em runtime, e' preciso limpar o atlas, adicionar a nova .ttf,
+// reconstruir o atlas e invalidar as texturas do backend D3D11.
+// A operacao e' cara — por isso so' e' executada quando o campo
+// editorMenuConfig.fontPath muda de fato (comparacao com cache).
+// O tamanho base e' fixo (32 px); o tamanho final do texto e' controlado
+// no AddText, com escalamento via GPU.
+// ==========================================
+static ImFont*     s_menuFont         = nullptr;
+static std::string s_menuFontLastPath = "(uninitialized)";
 
-	HDC hdc = GetDC(hwnd);
-	SetBkMode(hdc, TRANSPARENT);
+static void EnsureMenuFontLoaded()
+{
+	std::string current = editorMenuConfig.fontPath ? editorMenuConfig.fontPath : "";
+	if (current == s_menuFontLastPath) return; // ja carregada
 
-	int fontH = (g_currentHeight > 0) ? max(16, g_currentHeight / 22) : 28;
-	HFONT hFont = CreateFontW(fontH, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-		DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-		ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-	HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
+	ImGuiIO& io = ImGui::GetIO();
+	io.Fonts->Clear();
+	io.Fonts->AddFontDefault(); // fallback obrigatorio
 
-	const float startY = 0.2f, spacing = 0.3f;
-	const float w = (float)((g_currentWidth  > 0) ? g_currentWidth  : 800);
-	const float h = (float)((g_currentHeight > 0) ? g_currentHeight : 600);
-
-	for (int i = 0; i < labelCount && i < mainMenuCount; i++) {
-		bool sel = (selectedMenuIndex == i);
-		SetTextColor(hdc, sel ? RGB(255, 230, 90) : RGB(240, 240, 240));
-
-		float ndcY = startY - i * spacing;
-		int pxYCenter = (int)((1.0f - ndcY) * 0.5f * h);
-
-		const wchar_t* label = s_labelsW[i];
-		int len = (int)wcslen(label);
-		SIZE sz = {};
-		GetTextExtentPoint32W(hdc, label, len, &sz);
-		int pxX = (int)(w * 0.5f) - sz.cx / 2;
-		int pxY = pxYCenter - sz.cy / 2;
-
-		TextOutW(hdc, pxX, pxY, label, len);
+	s_menuFont = nullptr;
+	if (!current.empty()) {
+		// Falha silenciosa: se o arquivo nao existir ou for invalido,
+		// AddFontFromFileTTF retorna nullptr e o overlay cai na fonte default.
+		s_menuFont = io.Fonts->AddFontFromFileTTF(current.c_str(), 32.0f);
 	}
 
-	SelectObject(hdc, hOldFont);
-	DeleteObject(hFont);
-	ReleaseDC(hwnd, hdc);
+	io.Fonts->Build();
+	ImGui_ImplDX11_InvalidateDeviceObjects();
+	ImGui_ImplDX11_CreateDeviceObjects();
+
+	s_menuFontLastPath = current;
+}
+
+// Desenha os labels do menu principal sobre os botoes via ImGui (overlay
+// renderizado no mesmo frame DX, em vez do GDI antigo, que vivia entre o
+// desenho do backbuffer e o Present — provocando flicker visivel).
+// Cor, tamanho e familia da fonte sao parametrizaveis em editorMenuConfig.
+void RenderMenuTextOverlay()
+{
+	// Atualiza o atlas se a familia (caminho .ttf) mudou desde o ultimo frame.
+	// Deve ocorrer ANTES de ImGui_ImplDX11_NewFrame para nao interferir com
+	// recursos em uso no quadro corrente.
+	EnsureMenuFontLoaded();
+
+	ImGui_ImplDX11_NewFrame();
+	ImGui_ImplWin32_NewFrame();
+	ImGui::NewFrame();
+
+	ImGuiIO& io = ImGui::GetIO();
+	const float w = io.DisplaySize.x;
+	const float h = io.DisplaySize.y;
+
+	// Janela fullscreen sem decoracao, transparente e sem captura de input:
+	// serve apenas como camada de texto sobreposta aos botoes do menu.
+	ImGui::SetNextWindowPos(ImVec2(0, 0));
+	ImGui::SetNextWindowSize(ImVec2(w, h));
+	ImGui::SetNextWindowBgAlpha(0.0f);
+	ImGui::Begin("##menu_text", nullptr,
+		ImGuiWindowFlags_NoDecoration |
+		ImGuiWindowFlags_NoInputs |
+		ImGuiWindowFlags_NoNav |
+		ImGuiWindowFlags_NoMove |
+		ImGuiWindowFlags_NoSavedSettings |
+		ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+	// Mesma geometria utilizada por RenderMenu: startY 0.2, spacing 0.3 (NDC).
+	const float startY  = 0.2f;
+	const float spacing = 0.3f;
+
+	// Labels em UTF-8 (flag /utf-8 garante interpretacao correta dos bytes).
+	static const char* s_labels[] = {
+		"Jogar",
+		"Configura\xC3\xA7\xC3\xB5""es", // 'ç' = C3 A7, 'õ' = C3 B5
+		"Sair"
+	};
+	const int labelCount = (int)(sizeof(s_labels) / sizeof(s_labels[0]));
+
+	// Fonte e tamanho parametrizaveis. Quando nao ha fonte custom carregada,
+	// usa-se a default do ImGui (continua respeitando o textSize via AddText).
+	ImFont* font = s_menuFont ? s_menuFont : ImGui::GetFont();
+	float fontSize = (editorMenuConfig.textSize > 4.0f) ? editorMenuConfig.textSize : 24.0f;
+
+	auto toCol = [](float r, float g, float b, float a) {
+		auto clamp01 = [](float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); };
+		return IM_COL32((int)(clamp01(r) * 255.0f),
+		                (int)(clamp01(g) * 255.0f),
+		                (int)(clamp01(b) * 255.0f),
+		                (int)(clamp01(a) * 255.0f));
+	};
+	const ImU32 colNormal = toCol(editorMenuConfig.textColorR,
+	                              editorMenuConfig.textColorG,
+	                              editorMenuConfig.textColorB,
+	                              editorMenuConfig.textColorA);
+	const ImU32 colSelected = toCol(editorMenuConfig.textSelectedColorR,
+	                                editorMenuConfig.textSelectedColorG,
+	                                editorMenuConfig.textSelectedColorB,
+	                                editorMenuConfig.textSelectedColorA);
+
+	for (int i = 0; i < labelCount && i < mainMenuCount; i++) {
+		float ndcY    = startY - i * spacing;
+		float pxYCenter = (1.0f - ndcY) * 0.5f * h;
+
+		const char* label = s_labels[i];
+		ImVec2 sz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
+		float pxX = w * 0.5f - sz.x * 0.5f;
+		float pxY = pxYCenter - sz.y * 0.5f;
+
+		bool sel = (selectedMenuIndex == i);
+		ImGui::GetWindowDrawList()->AddText(font, fontSize,
+			ImVec2(pxX, pxY),
+			sel ? colSelected : colNormal,
+			label);
+	}
+
+	ImGui::End();
+	ImGui::Render();
+	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }
 
 // Desenha quad texturizado arbitrÃ¡rio em NDC
@@ -329,30 +407,6 @@ void RenderMenu() {
 								editorMenuConfig.selectedColorB, editorMenuConfig.selectedColorA };
 
 	for (int i = 0; i < mainMenuCount; i++) {
-		bool sel = (selectedMenuIndex == i);
-		float yCenter = startY - i * spacing;
-		float x1 = -buttonWidth / 2.0f, x2 = buttonWidth / 2.0f;
-		float y1 = yCenter - buttonHeight / 2.0f, y2 = yCenter + buttonHeight / 2.0f;
-		DrawMenuButton(x1, y1, x2, y2, sel ? colorSelected : colorNormal, sel);
-	}
-}
-
-void RenderDiffSelect() {
-	float clearColor[4] = {
-		editorMenuConfig.bgColorR, editorMenuConfig.bgColorG,
-		editorMenuConfig.bgColorB, editorMenuConfig.bgColorA
-	};
-	deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
-	DrawMenuBackground(menuBgTexture);
-	DrawMenuLogo();
-
-	float startY = 0.5f, spacing = 0.3f, buttonWidth = 0.8f, buttonHeight = 0.2f;
-	float colorNormal[4] = { editorMenuConfig.buttonColorR,   editorMenuConfig.buttonColorG,
-								editorMenuConfig.buttonColorB,   editorMenuConfig.buttonColorA };
-	float colorSelected[4] = { editorMenuConfig.selectedColorR, editorMenuConfig.selectedColorG,
-								editorMenuConfig.selectedColorB, editorMenuConfig.selectedColorA };
-
-	for (int i = 0; i < difficultyCount; i++) {
 		bool sel = (selectedMenuIndex == i);
 		float yCenter = startY - i * spacing;
 		float x1 = -buttonWidth / 2.0f, x2 = buttonWidth / 2.0f;

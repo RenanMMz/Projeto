@@ -202,6 +202,13 @@ StageEditorConfig editorStageEditorConfig = {
 	false, ""
 };
 
+// Portal — defaults do editor
+PortalConfig editorPortalConfig = {
+	0.10f,   // width
+	0.15f,   // height
+	""       // spritePath
+};
+
 // Objetos posicionados no stage editor
 std::vector<PlacedObject> stageObjects;
 // Projeto
@@ -212,3 +219,7 @@ char              gameProjectPath[MAX_PATH] = "game_config.json";
 // Preview e demo
 bool  editorDemoActive = false;
 float editorDemoBossHPPct = 1.0f;
+
+// Modo standalone: true habilita editor (tecla E + ImGui de debug);
+// false executa apenas o jogo, como executavel final distribuivel.
+bool g_isEditorEnabled = true;

@@ -322,7 +322,7 @@ enum StageMode {
 	STAGE_NORMAL = 0, STAGE_BOSS = 1
 };
 enum PlacedObjectType {
-	PLACED_BLOCK = 0, PLACED_OBSTACLE = 1, PLACED_BOSS = 2, PLACED_BALLSPAWN = 3
+	PLACED_BLOCK = 0, PLACED_OBSTACLE = 1, PLACED_BOSS = 2, PLACED_BALLSPAWN = 3, PLACED_PORTAL = 4
 };
 
 struct PlacedObject {
@@ -344,7 +344,15 @@ struct Portal
 {
 	float x, y, width, height;
 	bool active;
+	char spritePath[256] = {};
 	ID3D11ShaderResourceView* textureSRV = nullptr;
+};
+
+// Configuracao default do editor para portais (largura/altura/sprite)
+struct PortalConfig {
+	float width;
+	float height;
+	char  spritePath[256];
 };
 
 struct StageStartConfig {
@@ -513,6 +521,7 @@ extern BallSpriteConfig    editorBallConfig;
 extern MenuConfig          editorMenuConfig;
 extern StageStartConfig    editorStageConfig;
 extern StageEditorConfig   editorStageEditorConfig;
+extern PortalConfig        editorPortalConfig;
 
 // Portal
 extern std::unique_ptr<DirectX::SpriteBatch> spriteBatch;
@@ -528,3 +537,7 @@ extern char              gameProjectPath[MAX_PATH]; // path do game_config.json 
 // Preview e demo do editor
 extern bool  editorDemoActive;      // toggle de demonstracao (inimigos, boss)
 extern float editorDemoBossHPPct;   // slider de HP simulado para o boss
+
+// Modo standalone (executavel final, sem editor)
+// Quando false, suprime-se a UI ImGui de gameplay e ignora-se o toggle E.
+extern bool g_isEditorEnabled;

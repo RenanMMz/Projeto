@@ -13,6 +13,7 @@ void DrawMenuText(HWND hwnd);
 void RenderMenu();
 void RenderDiffSelect();
 void RenderGameplay();
+void RenderPortals();
 void RenderOptions();
 void RenderOptionsUI();
 void RenderDebugUI();

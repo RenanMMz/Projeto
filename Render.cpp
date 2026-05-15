@@ -428,6 +428,52 @@ void RenderBoss()
 	}
 }
 
+// ==========================================
+// RenderPortals — desenha cada portal ativo no vetor global `portals`.
+// Comportamento:
+//   - Se o portal possui textureSRV vinculada, utiliza-se o pixel shader
+//     texturizado via DrawTexturedQuad, respeitando a regiao (x, y, width,
+//     height) da estrutura Portal.
+//   - Caso contrario (fallback de desenvolvimento), desenha-se um quad
+//     solido ciano por meio do pipeline colorido (pixelShaderBlock),
+//     permitindo identificar visualmente portais sem sprite atribuido.
+// ==========================================
+void RenderPortals()
+{
+	for (auto& portal : portals)
+	{
+		if (!portal.active) continue;
+		if (portal.textureSRV)
+		{
+			DrawTexturedQuad(portal.textureSRV,
+				portal.x - portal.width / 2, portal.y,
+				portal.x + portal.width / 2, portal.y + portal.height);
+		}
+		else
+		{
+			// Fallback colorido: ciano, util durante a fase de criacao do estagio.
+			Vertex pVerts[] = {
+				{portal.x - portal.width / 2, portal.y + portal.height, 0.0f},
+				{portal.x - portal.width / 2, portal.y, 0.0f},
+				{portal.x + portal.width / 2, portal.y, 0.0f},
+				{portal.x - portal.width / 2, portal.y + portal.height, 0.0f},
+				{portal.x + portal.width / 2, portal.y, 0.0f},
+				{portal.x + portal.width / 2, portal.y + portal.height, 0.0f}
+			};
+			deviceContext->UpdateSubresource(obstacleBuffer, 0, nullptr, pVerts, 0, 0);
+			XMFLOAT4 pColor(0.0f, 1.0f, 1.0f, 1.0f);
+			deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &pColor, 0, 0);
+			deviceContext->IASetInputLayout(inputLayout);
+			deviceContext->VSSetShader(vertexShader, nullptr, 0);
+			deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0);
+			deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer);
+			UINT s = sizeof(Vertex), o = 0;
+			deviceContext->IASetVertexBuffers(0, 1, &obstacleBuffer, &s, &o);
+			deviceContext->Draw(6, 0);
+		}
+	}
+}
+
 void RenderGameplay() {
 	// Cor de fundo do stage (usa config do editor se disponivel)
 	float clearColor[4] = {
@@ -481,36 +527,7 @@ void RenderGameplay() {
 		}
 	}
 
-	for (auto& portal : portals)
-	{
-		if (!portal.active) continue;
-		if (portal.textureSRV)
-		{
-			DrawTexturedQuad(portal.textureSRV,
-				portal.x - portal.width / 2, portal.y,
-				portal.x + portal.width / 2, portal.y + portal.height);
-		}
-		else
-		{
-			// Padrão se não tiver textura, ciano
-			Vertex pVerts[] = {
-				{portal.x - portal.width / 2, portal.y + portal.height, 0.0f},
-				{portal.x - portal.width / 2, portal.y, 0.0f},
-				{portal.x + portal.width / 2, portal.y, 0.0f},
-				{portal.x - portal.width / 2, portal.y + portal.height, 0.0f},
-				{portal.x + portal.width / 2, portal.y, 0.0f},
-				{portal.x + portal.width / 2, portal.y + portal.height, 0.0f}
-			};
-			deviceContext->UpdateSubresource(obstacleBuffer, 0, nullptr, pVerts, 0, 0);
-			XMFLOAT4 pColor(0.0f, 1.0f, 1.0f, 1.0f);
-			deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &pColor, 0, 0);
-			deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0);
-			deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer);
-			UINT s = sizeof(Vertex), o = 0;
-			deviceContext->IASetVertexBuffers(0, 1, &obstacleBuffer, &s, &o);
-			deviceContext->Draw(6, 0);
-		}
-	}
+	RenderPortals();
 
 	// Bola — textura ou cor solida
 	if (editorBallTexture) {
@@ -902,7 +919,11 @@ static void RenderPreview_Stage()
 		case PLACED_BOSS:
 			DrawQuadColor(o.x, o.y, editorBossConfig.width / 2.0f, editorBossConfig.height / 2.0f,
 				0.9f, 0.2f, 0.2f, 1.0f); break;
+		case PLACED_PORTAL:
+			DrawQuadColor(o.x, o.y, editorPortalConfig.width / 2.0f, editorPortalConfig.height / 2.0f,
+				0.1f, 0.7f, 0.9f, 1.0f); break;
 		default:
+			// PLACED_BALLSPAWN cai aqui — desenha-se um marcador esferico.
 			DrawBall(o.x, o.y, ballSize, 0.2f, 1.0f, 0.3f); break;
 		}
 	}

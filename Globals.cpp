@@ -189,7 +189,13 @@ MenuConfig editorMenuConfig = {
 	0.30f, 0.30f, 0.80f, 1.0f,
 	1.00f, 1.00f, 0.30f, 1.0f,
 	"", "", "",
-	0.0f, 0.75f, 0.8f, 0.15f
+	0.0f, 0.75f, 0.8f, 0.15f,
+	// Texto dos botoes — defaults equivalentes ao que era hardcoded em
+	// RenderMenuTextOverlay (cinza claro normal, amarelo selecionado).
+	0.94f, 0.94f, 0.94f, 1.0f,
+	1.00f, 0.90f, 0.35f, 1.0f,
+	24.0f,
+	""
 };
 
 // Stage start (retro-compatibilidade)

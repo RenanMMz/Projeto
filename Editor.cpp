@@ -843,7 +843,12 @@ bool SaveMenuConfig(const char* fullPath)
 	f << "  \"logoX\": " << editorMenuConfig.logoX << ",\n";
 	f << "  \"logoY\": " << editorMenuConfig.logoY << ",\n";
 	f << "  \"logoWidth\": " << editorMenuConfig.logoWidth << ",\n";
-	f << "  \"logoHeight\": " << editorMenuConfig.logoHeight << "\n";
+	f << "  \"logoHeight\": " << editorMenuConfig.logoHeight << ",\n";
+	// Tipografia
+	f << "  \"txtR\": " << editorMenuConfig.textColorR << ", \"txtG\": " << editorMenuConfig.textColorG << ", \"txtB\": " << editorMenuConfig.textColorB << ", \"txtA\": " << editorMenuConfig.textColorA << ",\n";
+	f << "  \"txtSelR\": " << editorMenuConfig.textSelectedColorR << ", \"txtSelG\": " << editorMenuConfig.textSelectedColorG << ", \"txtSelB\": " << editorMenuConfig.textSelectedColorB << ", \"txtSelA\": " << editorMenuConfig.textSelectedColorA << ",\n";
+	f << "  \"textSize\": " << editorMenuConfig.textSize << ",\n";
+	f << "  \"fontPath\": \"" << editorMenuConfig.fontPath << "\"\n";
 	f << "}\n"; f.close(); return true;
 }
 
@@ -859,6 +864,10 @@ bool LoadMenuConfig(const char* fullPath)
 		if (line.find("\"logoY\"") != std::string::npos) sscanf_s(line.c_str(), " \"logoY\": %f ,", &editorMenuConfig.logoY);
 		if (line.find("\"logoWidth\"") != std::string::npos) sscanf_s(line.c_str(), " \"logoWidth\": %f ,", &editorMenuConfig.logoWidth);
 		if (line.find("\"logoHeight\"") != std::string::npos) sscanf_s(line.c_str(), " \"logoHeight\": %f", &editorMenuConfig.logoHeight);
+		// Tipografia (campos opcionais — defaults preservados se ausentes)
+		if (line.find("\"txtR\"") != std::string::npos) sscanf_s(line.c_str(), " \"txtR\": %f , \"txtG\": %f , \"txtB\": %f , \"txtA\": %f ,", &editorMenuConfig.textColorR, &editorMenuConfig.textColorG, &editorMenuConfig.textColorB, &editorMenuConfig.textColorA);
+		if (line.find("\"txtSelR\"") != std::string::npos) sscanf_s(line.c_str(), " \"txtSelR\": %f , \"txtSelG\": %f , \"txtSelB\": %f , \"txtSelA\": %f ,", &editorMenuConfig.textSelectedColorR, &editorMenuConfig.textSelectedColorG, &editorMenuConfig.textSelectedColorB, &editorMenuConfig.textSelectedColorA);
+		if (line.find("\"textSize\"") != std::string::npos) sscanf_s(line.c_str(), " \"textSize\": %f ,", &editorMenuConfig.textSize);
 		auto readStr = [&](const char* key, char* dest, int sz) {
 			if (line.find(key) != std::string::npos) {
 				size_t s = line.find(": \"") + 3, e = line.rfind("\"");
@@ -870,6 +879,7 @@ bool LoadMenuConfig(const char* fullPath)
 		readStr("\"bgTexture\"", editorMenuConfig.bgTexturePath, 256);
 		readStr("\"titleTexture\"", editorMenuConfig.titleTexturePath, 256);
 		readStr("\"selectorTexture\"", editorMenuConfig.selectorTexturePath, 256);
+		readStr("\"fontPath\"", editorMenuConfig.fontPath, 256);
 	}
 	f.close();
 	LoadSRV(editorMenuConfig.bgTexturePath, &menuBgTexture);
@@ -1521,6 +1531,45 @@ void RenderEditorMenu()
 			LoadSRV(editorMenuConfig.bgTexturePath, &menuBgTexture);
 	}
 
+	if (ImGui::CollapsingHeader("Fonte do Texto", ImGuiTreeNodeFlags_DefaultOpen)) {
+		ImGui::ColorEdit4("Cor (Normal)",      &editorMenuConfig.textColorR,
+			ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_PickerHueBar);
+		ImGui::ColorEdit4("Cor (Selecionado)", &editorMenuConfig.textSelectedColorR,
+			ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_PickerHueBar);
+
+		ImGui::SliderFloat("Tamanho (px)", &editorMenuConfig.textSize, 10.0f, 96.0f, "%.0f");
+
+		ImGui::Separator();
+		ImGui::TextDisabled("Familia (arquivo .ttf):");
+		ImGui::PushItemWidth(-90);
+		ImGui::InputText("##fontpath", editorMenuConfig.fontPath,
+			sizeof(editorMenuConfig.fontPath));
+		ImGui::PopItemWidth();
+		ImGui::SameLine();
+		if (ImGui::Button("Procurar...##fnt", ImVec2(80, 0))) {
+			// Reaproveita o dialogo de textura, filtrando manualmente .ttf
+			// (o OpenFileName trata extensoes pelo lpstrFilter; o filtro de
+			// imagens existente aceita "All Files (*.*)" como fallback).
+			char tmp[MAX_PATH] = {};
+			OPENFILENAMEA ofn = {};
+			ofn.lStructSize = sizeof(ofn);
+			ofn.hwndOwner = g_hWnd;
+			ofn.lpstrFile = tmp;
+			ofn.nMaxFile = MAX_PATH;
+			ofn.lpstrFilter = "TrueType Font (*.ttf)\0*.ttf\0All Files\0*.*\0";
+			ofn.nFilterIndex = 1;
+			ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+			char winFonts[MAX_PATH] = {};
+			if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_FONTS, NULL, 0, winFonts)))
+				ofn.lpstrInitialDir = winFonts;
+			if (GetOpenFileNameA(&ofn)) {
+				strncpy_s(editorMenuConfig.fontPath, tmp,
+					sizeof(editorMenuConfig.fontPath) - 1);
+			}
+		}
+		ImGui::TextDisabled("Vazio = fonte padrao do ImGui.");
+	}
+
 	ImGui::Separator();
 	{
 		char sp[MAX_PATH] = {}, lp[MAX_PATH] = {}; bool ds, dl;
@@ -2005,10 +2054,6 @@ void RenderEditorProject()
 	// ==========================================
 	ImGui::Separator();
 	ImGui::TextDisabled("Distribuicao");
-	ImGui::TextWrapped(
-		"Gera um pacote autocontido (executavel + DLLs do CRT + Assets + objects + "
-		"game_config.json + config.json com standalone=true). Os caminhos absolutos "
-		"das texturas e configs sao reescritos para caminhos relativos a' pasta de destino.");
 
 	// Buffer persistente para o campo de path. Permite ao usuario digitar
 	// manualmente ou aproveitar o ultimo destino escolhido entre cliques.

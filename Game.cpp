@@ -98,26 +98,6 @@ void InitGameplay(int selectedDifficulty, int selectedLives)
 // MENUS
 // ==========================================
 
-void UpdateDiffSelect()
-{
-    bool isUpPressed = (GetAsyncKeyState(VK_UP) & 0x8000);
-    bool isDownPressed = (GetAsyncKeyState(VK_DOWN) & 0x8000);
-    if (isUpPressed && !g_wasUpPressed)   selectedMenuIndex = max(0, selectedMenuIndex - 1);
-    if (isDownPressed && !g_wasDownPressed) selectedMenuIndex = min(difficultyCount - 1, selectedMenuIndex + 1);
-    bool isZPressed = (GetAsyncKeyState('Z') & 0x8000);
-    bool isXPressed = (GetAsyncKeyState('X') & 0x8000);
-    if (isZPressed && !g_wasZPressed) {
-        difficulty = selectedMenuIndex;
-        InitGameplay(difficulty, cfgLife);
-        currentState = GameState::STATE_GAMEPLAY;
-    }
-    if (isXPressed) {
-        selectedMenuIndex = 0;
-        currentState = GameState::STATE_START_MENU;
-    }
-    g_wasUpPressed = isUpPressed; g_wasDownPressed = isDownPressed; g_wasZPressed = isZPressed;
-}
-
 void UpdateMenu()
 {
     bool isUpPressed = (GetAsyncKeyState(VK_UP) & 0x8000);
@@ -127,8 +107,10 @@ void UpdateMenu()
     bool isZPressed = (GetAsyncKeyState('Z') & 0x8000);
     if (isZPressed && !g_wasZPressed) {
         if (selectedMenuIndex == 0) {
-            selectedMenuIndex = 0;
-            currentState = GameState::STATE_DIFFICULTY_SELECT;
+            // "Jogar" — entrada direta no gameplay com dificuldade padrao.
+            // A selecao de dificuldade foi removida do fluxo atual.
+            InitGameplay(0, cfgLife);
+            currentState = GameState::STATE_GAMEPLAY;
         }
         else if (selectedMenuIndex == 1) {
             currentState = GameState::STATE_OPTIONS;

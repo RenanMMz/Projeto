@@ -14,7 +14,7 @@
 #include "./imgui/imgui_impl_win32.h"
 #include "./imgui/imgui_impl_dx11.h"
 
-// Forward declaration � RenderEditorProject definida no final do arquivo
+// Forward declaration - RenderEditorProject definida no final do arquivo
 void RenderEditorProject();
 
 // Forward declarations de Level.cpp (evita depender da versao do Level.h no projeto)
@@ -25,6 +25,10 @@ bool LoadGameProject(const char* fullPath);
 // ==========================================
 // UTILITARIOS INTERNOS
 // ==========================================
+
+// Estado do colapso do painel do editor. Usado pelas abas Stage e Boss,
+// que precisam do stage inteiro visivel para posicionar entidades/movimento.
+static bool s_editorPanelCollapsed = false;
 
 static void LoadSRV(const char* path, ID3D11ShaderResourceView** srv)
 {
@@ -37,7 +41,7 @@ static void LoadSRV(const char* path, ID3D11ShaderResourceView** srv)
 }
 
 // ==========================================
-// CAMINHOS BASE � Documents\TorrouEngine
+// CAMINHOS BASE - Documents\TorrouEngine
 // ==========================================
 
 static const char* GetEngineBasePath()
@@ -87,7 +91,7 @@ static void GetEngineObjectsPath(const char* subdir, char* outPath, int maxLen)
 }
 
 // Copia um asset para Documents\TorrouEngine\Assets\ e retorna o novo path.
-// Se o arquivo j� estiver em Assets, apenas copia o path.
+// Se o arquivo ja estiver em Assets, apenas copia o path.
 static bool CopyAssetToEngine(const char* srcPath, char* destPath, int destLen)
 {
 	if (!srcPath || !srcPath[0]) return false;
@@ -355,7 +359,7 @@ void UpdateEditor()
 }
 
 // ==========================================
-// SAVE / LOAD � PLAYER
+// SAVE / LOAD -PLAYER
 // ==========================================
 
 bool SavePlayerConfig(const char* fullPath)
@@ -434,7 +438,7 @@ bool LoadPlayerConfig(const char* fullPath)
 }
 
 // ==========================================
-// SAVE / LOAD � BALL
+// SAVE / LOAD -BALL
 // ==========================================
 
 bool SaveBallConfig(const char* fullPath)
@@ -467,7 +471,7 @@ bool LoadBallConfig(const char* fullPath)
 }
 
 // ==========================================
-// SAVE / LOAD � STAGE
+// SAVE / LOAD -STAGE
 // ==========================================
 
 bool SaveStageConfig(const char* fullPath) {
@@ -478,7 +482,7 @@ bool LoadStageConfig(const char* fullPath) {
 }
 
 // ==========================================
-// SAVE / LOAD � OBSTACLE
+// SAVE / LOAD -OBSTACLE
 // ==========================================
 
 bool SaveObstacleConfig(const char* fullPath)
@@ -519,7 +523,7 @@ bool LoadObstacleConfig(const char* fullPath)
 }
 
 // ==========================================
-// SAVE / LOAD � BLOCK (ENEMY)
+// SAVE / LOAD -BLOCK (ENEMY)
 // ==========================================
 
 bool SaveBlockConfig(const char* fullPath)
@@ -829,7 +833,7 @@ bool LoadBossConfig(const char* fullPath)
 }
 
 // ==========================================
-// SAVE / LOAD � MENU
+// SAVE / LOAD -MENU
 // ==========================================
 
 bool SaveMenuConfig(const char* fullPath)
@@ -891,7 +895,7 @@ bool LoadMenuConfig(const char* fullPath)
 }
 
 // ==========================================
-// PAINEL � JOGADOR
+// PAINEL -JOGADOR
 // ==========================================
 
 static void BulletPatternCombo(const char* label, int& pattern)
@@ -923,7 +927,7 @@ void RenderEditorPlayer()
 			LoadSRV(editorPlayerConfig.runRightTexturePath, &editorPlayerRunRightTexture);
 		if (TextureButton("Correndo Esquerda", editorPlayerConfig.runLeftTexturePath, 256, "spr_run_l"))
 			LoadSRV(editorPlayerConfig.runLeftTexturePath, &editorPlayerRunLeftTexture);
-		TextureButton("Proj�til", editorPlayerConfig.projectileTexturePath, 256, "spr_proj");
+		TextureButton("Projetil", editorPlayerConfig.projectileTexturePath, 256, "spr_proj");
 		TextureButton("Escudo", editorPlayerConfig.shieldTexturePath, 256, "spr_shield");
 		if (TextureButton("Dash Direita", editorPlayerConfig.dashRightTexturePath, 256, "spr_dash_r"))
 			LoadSRV(editorPlayerConfig.dashRightTexturePath, &editorPlayerDashRightTexture);
@@ -940,7 +944,7 @@ void RenderEditorPlayer()
 			if (ImGui::RadioButton(fxNames[i], fxType == i)) fxType = i;
 		}
 		fx.type = (DamageEffectType)fxType;
-		ImGui::SliderInt("Dura��o (frames)", &fx.durationFrames, 30, 300);
+		ImGui::SliderInt("Duracao (frames)", &fx.durationFrames, 30, 300);
 
 		if (fx.type == DMG_BLINK) {
 			ImGui::SliderInt("Intervalo piscar (frames)", &fx.blinkIntervalFrames, 1, 20);
@@ -964,7 +968,7 @@ void RenderEditorPlayer()
 }
 
 // ==========================================
-// PAINEL � BOLA
+// PAINEL -BOLA
 // ==========================================
 
 void RenderEditorBall()
@@ -972,8 +976,8 @@ void RenderEditorBall()
 	ImGui::Text("=== EDITOR DE BOLA ===");
 	ImGui::Separator();
 
-	ImGui::SliderFloat("Tamanho", &ballSize, 0.01f, 0.1f);
-	ImGui::SliderFloat("Velocidade Ini.", &editorBallConfig.initialSpeed, 0.005f, 0.06f, "%.4f");
+	ImGui::SliderFloat("Tamanho", &ballSize, 0.01f, 0.05f);
+	ImGui::SliderFloat("Velocidade Ini.", &editorBallConfig.initialSpeed, 0.005f, 0.04f, "%.4f");
 	if (TextureButton("Sprite da Bola", editorBallConfig.texturePath, 256, "spr_ball"))
 		LoadSRV(editorBallConfig.texturePath, &editorBallTexture);
 
@@ -988,7 +992,7 @@ void RenderEditorBall()
 }
 
 // ==========================================
-// PAINEL � STAGE EDITOR
+// PAINEL -STAGE EDITOR
 // ==========================================
 
 void RenderEditorStage()
@@ -1006,7 +1010,7 @@ void RenderEditorStage()
 
 	// Background
 	if (ImGui::CollapsingHeader("Background")) {
-		ImGui::RadioButton("Cor s�lida##bg", (int*)&editorStageEditorConfig.useTextureBg, 0);
+		ImGui::RadioButton("Cor solida##bg", (int*)&editorStageEditorConfig.useTextureBg, 0);
 		ImGui::SameLine();
 		ImGui::RadioButton("Textura##bg", (int*)&editorStageEditorConfig.useTextureBg, 1);
 		if (!editorStageEditorConfig.useTextureBg) {
@@ -1052,7 +1056,7 @@ void RenderEditorStage()
 			}
 		}
 		ImGui::SameLine();
-		if (ImGui::Button("+ Obst�culo (JSON)")) {
+		if (ImGui::Button("+ Obstaculo (JSON)")) {
 			char p[MAX_PATH] = {};
 			if (OpenJsonLoadDialog(p, MAX_PATH, "objects\\OBSTACLE")) {
 				PlacedObject po = {}; po.type = PLACED_OBSTACLE; po.x = 0.0f; po.y = 0.0f;
@@ -1090,8 +1094,23 @@ void RenderEditorStage()
 		ImGui::Separator();
 
 		const int kTypeCount = (int)(sizeof(typeNames) / sizeof(typeNames[0]));
+		// Filtro de tipo (facilita encontrar entidades em estagios cheios).
+		static int s_filterType = -1; // -1 = todos
+		ImGui::SetNextItemWidth(140);
+		const char* filterItems[] = { "Todos", "Inimigo", "Obstaculo", "Boss", "Spawn Bola", "Portal" };
+		int filterIdx = s_filterType + 1;
+		if (ImGui::Combo("Filtro##stageobjs", &filterIdx, filterItems, IM_ARRAYSIZE(filterItems)))
+			s_filterType = filterIdx - 1;
+		ImGui::TextDisabled("Total: %d objetos", (int)stageObjects.size());
+
+		// Lista scrollavel com altura limitada: a aba Stage tem muitos
+		// controles globais (cores, spawn, save/load); manter a lista
+		// confinada evita empurrar os botoes de save para fora da tela
+		// quando o estagio tem dezenas de entidades.
+		ImGui::BeginChild("##objlist", ImVec2(0, 240), true);
 		for (int i = 0; i < (int)stageObjects.size(); i++) {
 			auto& o = stageObjects[i];
+			if (s_filterType >= 0 && (int)o.type != s_filterType) continue;
 			ImGui::PushID(i);
 			// Clamp defensivo do indice: evita out-of-bounds caso o enum
 			// PlacedObjectType cresca sem atualizacao desta tabela.
@@ -1099,17 +1118,32 @@ void RenderEditorStage()
 			const char* tname = (ti >= 0 && ti < kTypeCount) ? typeNames[ti] : "?";
 			ImGui::Text("[%s] %s", tname, o.displayName);
 			ImGui::SameLine();
-			ImGui::SetNextItemWidth(80);
+			ImGui::SetNextItemWidth(70);
 			ImGui::DragFloat("X##ox", &o.x, 0.01f, -1.0f, 1.0f, "%.2f");
 			ImGui::SameLine();
-			ImGui::SetNextItemWidth(80);
+			ImGui::SetNextItemWidth(70);
 			ImGui::DragFloat("Y##oy", &o.y, 0.01f, -1.0f, 1.0f, "%.2f");
+			ImGui::SameLine();
+			// Duplicar: clona o objeto reaproveitando o mesmo configFile,
+			// evitando que o autor tenha que reimportar o JSON cada vez
+			// que precisa de outra copia da mesma entidade no estagio.
+			// O clone aparece deslocado em Y para nao ficar coberto pelo
+			// original e ja' fica selecionado para arrasto imediato.
+			if (ImGui::SmallButton("Dup##dup")) {
+				PlacedObject copy = o;
+				copy.y = o.y - 0.10f;       // empilha logo abaixo do original
+				copy.selected = false;
+				stageObjects.push_back(copy);
+				ImGui::PopID();
+				break;                       // a lista cresceu; reinicia no proximo frame
+			}
 			ImGui::SameLine();
 			if (ImGui::SmallButton("X##rem")) {
 				stageObjects.erase(stageObjects.begin() + i); ImGui::PopID(); break;
 			}
 			ImGui::PopID();
 		}
+		ImGui::EndChild();
 	}
 
 	ImGui::Separator();
@@ -1118,10 +1152,10 @@ void RenderEditorStage()
 		if (JsonSaveLoadButtons("objects\\STAGE", sp, MAX_PATH, lp, MAX_PATH, &ds, &dl)) {
 			if (ds) {
 				SaveStageConfig(sp);
-				// Exporta stage.txt no mesmo diret�rio para o gameplay carregar
+				// Exporta stage.txt no mesmo diretorio para o gameplay carregar
 				char txtPath[MAX_PATH];
 				strncpy_s(txtPath, sp, MAX_PATH - 1);
-				// Troca extens�o .json por .txt
+				// Troca extensao .json por .txt
 				char* ext = strrchr(txtPath, '.');
 				if (ext) strcpy_s(ext, MAX_PATH - (ext - txtPath), ".txt");
 				else strncat_s(txtPath, MAX_PATH, ".txt", 4);
@@ -1133,7 +1167,7 @@ void RenderEditorStage()
 }
 
 // ==========================================
-// PAINEL � OBST�CULOS
+// PAINEL -OBSTACULOS
 // ==========================================
 
 void RenderEditorObstacle()
@@ -1149,7 +1183,7 @@ void RenderEditorObstacle()
 	}
 
 	if (ImGui::CollapsingHeader("Aparencia", ImGuiTreeNodeFlags_DefaultOpen)) {
-		ImGui::RadioButton("Cor s�lida##obs_app", (int*)&editorObstacleConfig.useTexture, 0);
+		ImGui::RadioButton("Cor solida##obs_app", (int*)&editorObstacleConfig.useTexture, 0);
 		ImGui::SameLine();
 		ImGui::RadioButton("Sprite##obs_app", (int*)&editorObstacleConfig.useTexture, 1);
 		if (!editorObstacleConfig.useTexture) {
@@ -1181,7 +1215,7 @@ void RenderEditorObstacle()
 }
 
 // ==========================================
-// PAINEL � INIMIGOS (BLOCOS)
+// PAINEL -INIMIGOS (BLOCOS)
 // ==========================================
 
 void RenderEditorEnemy()
@@ -1210,7 +1244,7 @@ void RenderEditorEnemy()
 	}
 
 	if (ImGui::CollapsingHeader("Aparencia", ImGuiTreeNodeFlags_DefaultOpen)) {
-		ImGui::RadioButton("Cor s�lida##blk_app", (int*)&editorBlockConfig.useTexture, 0);
+		ImGui::RadioButton("Cor solida##blk_app", (int*)&editorBlockConfig.useTexture, 0);
 		ImGui::SameLine();
 		ImGui::RadioButton("Sprite##blk_app", (int*)&editorBlockConfig.useTexture, 1);
 		if (!editorBlockConfig.useTexture) {
@@ -1272,7 +1306,7 @@ void RenderEditorEnemy()
 }
 
 // ==========================================
-// PAINEL � BOSS
+// PAINEL -BOSS
 // ==========================================
 
 static bool PickPosButton(const char* label, float* px, float* py)
@@ -1293,7 +1327,7 @@ static void BossActionEditor(BossAction& a, int idx)
 	ImGui::PushID(idx);
 	const char* actNames[] = {
 		"Mover ate ponto", "Teleportar", "Atirar (tempo)",
-		"Atirar (pontos fixos)", "Avan�ar no jogador",
+		"Atirar (pontos fixos)", "Avancar no jogador",
 		"Esperar", "Spawnar minion", "Trocar sprite", "Invulneravel"
 	};
 	int t = (int)a.type;
@@ -1345,7 +1379,7 @@ static void BossActionEditor(BossAction& a, int idx)
 		break;
 	case BOSS_ACT_INVINCIBLE:
 		ImGui::Checkbox("Ativar invulnerabilidade##actinv", &a.invincibleOn);
-		ImGui::SliderFloat("Dura��o (s)##actinv", &a.duration, 0.1f, 10.0f);
+		ImGui::SliderFloat("Duracao (s)##actinv", &a.duration, 0.1f, 10.0f);
 		break;
 	default: break;
 	}
@@ -1387,6 +1421,13 @@ static void BossScriptEditor(BossScript& script, const char* uid)
 void RenderEditorBoss()
 {
 	ImGui::Text("=== EDITOR DE BOSS ===");
+	// Esconder painel: o boss usa o stage inteiro (-1..1 NDC) para
+	// movimentacao; sem colapsar, metade da arena fica atras do painel.
+	if (ImGui::Button("< Esconder Painel##boss"))
+		s_editorPanelCollapsed = true;
+	ImGui::SameLine();
+	ImGui::TextDisabled("(colapse para ver o stage completo)");
+	ImGui::Separator();
 	// Demo toggle
 	if (editorDemoActive) {
 		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
@@ -1407,9 +1448,9 @@ void RenderEditorBoss()
 	ImGui::InputText("Nome##boss", editorBossConfig.name, sizeof(editorBossConfig.name));
 	if (TextureButton("Sprite", editorBossConfig.texturePath, 256, "spr_boss"))
 		LoadSRV(editorBossConfig.texturePath, &editorBossTexture);
-	ImGui::SliderInt("HP M�ximo", &editorBossConfig.maxHP, 10, 5000);
-	ImGui::SliderFloat("Largura##bss", &editorBossConfig.width, 0.05f, 0.8f);
-	ImGui::SliderFloat("Altura##bss", &editorBossConfig.height, 0.05f, 0.8f);
+	ImGui::SliderInt("HP Maximo", &editorBossConfig.maxHP, 10, 1000);
+	ImGui::SliderFloat("Largura##bss", &editorBossConfig.width, 0.05f, 0.6f);
+	ImGui::SliderFloat("Altura##bss", &editorBossConfig.height, 0.05f, 0.6f);
 
 	// Posicao inicial
 	ImGui::TextDisabled("Posicao inicial (NDC):");
@@ -1421,9 +1462,9 @@ void RenderEditorBoss()
 	}
 
 	// Arquetipo
-	const char* archNames[] = { "Scripted", "Est�tico", "Est�tico + Familiares", "Multi-Part" };
+	const char* archNames[] = { "Scripted", "Estatico", "Estatico + Familiares", "Multi-Part" };
 	int arch = (int)editorBossConfig.archetype;
-	ImGui::Combo("Arqu�tipo", &arch, archNames, IM_ARRAYSIZE(archNames));
+	ImGui::Combo("Arquetipo", &arch, archNames, IM_ARRAYSIZE(archNames));
 	editorBossConfig.archetype = (BossArchetype)arch;
 
 	// Fases de HP com scripts
@@ -1450,9 +1491,14 @@ void RenderEditorBoss()
 				if (ImGui::TreeNode((void*)(intptr_t)(100 + i), "%s", flabel)) {
 					ImGui::DragFloat("Offset X##fam", &fam.relOffsetX, 0.01f, -1.0f, 1.0f);
 					ImGui::DragFloat("Offset Y##fam", &fam.relOffsetY, 0.01f, -1.0f, 1.0f);
-					ImGui::SliderFloat("Raio Orbita##fam", &fam.orbitRadius, 0.0f, 0.8f);
-					ImGui::SliderFloat("Vel. Orbita (graus/s)##fam", &fam.orbitSpeed, 0.0f, 360.0f);
-					BulletPatternCombo("Padr�o##fam", fam.bulletPattern);
+					ImGui::SliderFloat("Raio Orbita##fam", &fam.orbitRadius, 0.0f, 0.5f);
+					// orbitSpeed e' aplicado diretamente como radianos por frame
+					// no gameplay (g_boss.familiarAngles[i] += fam.orbitSpeed),
+					// nao como graus/s. A escala antiga (0-360) interpretava o
+					// numero como se fosse degrees-per-second e produzia rotacao
+					// completamente irrealista (60+ revolucoes por frame).
+					ImGui::SliderFloat("Vel. Orbita (rad/frame)##fam", &fam.orbitSpeed, 0.0f, 0.20f, "%.3f");
+					BulletPatternCombo("Padrao##fam", fam.bulletPattern);
 					ImGui::SliderInt("Qtd.##fam", &fam.bulletCount, 1, 16);
 					ImGui::SliderFloat("Vel.##fam_bs", &fam.bulletSpeed, 0.001f, 0.03f);
 					ImGui::SliderFloat("Intervalo Tiro (s)##fam", &fam.shootIntervalSec, 0.1f, 10.0f);
@@ -1497,7 +1543,7 @@ void RenderEditorBoss()
 }
 
 // ==========================================
-// PAINEL � MENU
+// PAINEL -MENU
 // ==========================================
 
 void RenderEditorMenu()
@@ -1523,8 +1569,8 @@ void RenderEditorMenu()
 		ImGui::Separator();
 		ImGui::SliderFloat("Centro X##logo", &editorMenuConfig.logoX, -1.0f, 1.0f);
 		ImGui::SliderFloat("Centro Y##logo", &editorMenuConfig.logoY, -1.0f, 1.0f);
-		ImGui::SliderFloat("Largura##logo", &editorMenuConfig.logoWidth, 0.05f, 2.0f);
-		ImGui::SliderFloat("Altura##logo", &editorMenuConfig.logoHeight, 0.02f, 1.5f);
+		ImGui::SliderFloat("Largura##logo", &editorMenuConfig.logoWidth, 0.05f, 1.5f);
+		ImGui::SliderFloat("Altura##logo", &editorMenuConfig.logoHeight, 0.02f, 0.6f);
 		if (ImGui::Button("Reset Logo")) {
 			editorMenuConfig.logoX = 0.0f; editorMenuConfig.logoY = 0.75f; editorMenuConfig.logoWidth = 0.8f; editorMenuConfig.logoHeight = 0.15f;
 		}
@@ -1656,15 +1702,24 @@ void RenderEditorPortal()
 // RENDER DO EDITOR (tabs + viewport)
 // ==========================================
 
-static bool s_editorPanelCollapsed = false;
-
 void RenderEditorUI_NoNewFrame()
 {
-	// Quando no Stage tab, permitir colapsar o painel para dar mais espaco
-	if (s_editorPanelCollapsed && currentEditorMode == EDITOR_MODE_STAGE) {
+	// Altura do painel acompanha a altura da janela (em vez de fixar 600px).
+	// Em resolucoes maiores isso evita um grande espaco morto abaixo do
+	// painel enquanto o conteudo das abas rola dentro de uma area pequena.
+	ImGuiIO& io = ImGui::GetIO();
+	float panelH = io.DisplaySize.y;
+
+	// Permite colapsar o painel para dar mais espaco em telas onde o stage
+	// inteiro precisa ser visivel (Stage e Boss — este ultimo precisa do
+	// stage completo para posicionar MOVE_TO/TELEPORT atraves da arena).
+	const bool collapsibleMode =
+		(currentEditorMode == EDITOR_MODE_STAGE ||
+		 currentEditorMode == EDITOR_MODE_BOSS);
+	if (s_editorPanelCollapsed && collapsibleMode) {
 		// Painel fino com botao de expandir
 		ImGui::SetNextWindowPos(ImVec2(0, 0));
-		ImGui::SetNextWindowSize(ImVec2(32, 600));
+		ImGui::SetNextWindowSize(ImVec2(32, panelH));
 		ImGui::Begin("##collapsed", nullptr,
 			ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
 			ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
@@ -1676,10 +1731,20 @@ void RenderEditorUI_NoNewFrame()
 		return;
 	}
 
-	float panelW = (currentEditorMode == EDITOR_MODE_STAGE) ? 300.0f : 380.0f;
-	ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(ImVec2(panelW, 600));
+	ImGui::SetNextWindowPos(ImVec2(0, 0));
+	// Constraint: largura entre 240 e 720 px; altura travada na janela.
+	// Usuario pode arrastar a borda direita para ajustar conforme prefira.
+	ImGui::SetNextWindowSizeConstraints(ImVec2(240.0f, panelH), ImVec2(720.0f, panelH));
+	// Largura inicial 380px (valor antigo). Aplicada apenas na primeira
+	// abertura; em frames subsequentes a largura escolhida pelo usuario
+	// persiste, e a altura e' continuamente reajustada via SetWindowSize
+	// abaixo (a janela pode ter sido redimensionada pelo OS).
+	ImGui::SetNextWindowSize(ImVec2(380.0f, panelH), ImGuiCond_FirstUseEver);
 	ImGui::Begin("TorrouDX Editor", nullptr,
-		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+	// Reaplica a altura a cada frame para acompanhar resize da janela
+	// principal sem alterar a largura escolhida pelo usuario.
+	ImGui::SetWindowSize(ImVec2(ImGui::GetWindowWidth(), panelH));
 
 	if (ImGui::BeginTabBar("EditorTabs")) {
 		if (ImGui::BeginTabItem("Projeto")) {
@@ -1737,7 +1802,7 @@ void RenderEditorUI_NoNewFrame()
 	ImGui::Render(); ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }
 
-// Vers�o legada com NewFrame proprio (mantida por compatibilidade)
+// Versao legada com NewFrame proprio (mantida por compatibilidade)
 void RenderEditorUI()
 {
 	ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
@@ -1745,7 +1810,7 @@ void RenderEditorUI()
 }
 
 // ==========================================
-// PAINEL � PROJETO
+// PAINEL -PROJETO
 // ==========================================
 
 // ==========================================
@@ -2160,8 +2225,8 @@ void RenderEditorProject()
 		ProjectFileButton("Menu", gameProject.menuConfigPath, "objects\\MENU");
 
 		ImGui::Separator();
-		ImGui::Text("Stages (ordem de progress�o):");
-		ImGui::TextDisabled("O stage 0 � carregado ao iniciar; os demais avan�am em sequ�ncia.");
+		ImGui::Text("Stages (ordem de progressao):");
+		ImGui::TextDisabled("O stage 0 e' carregado ao iniciar; os demais avancam em sequencia.");
 
 		for (int i = 0; i < gameProject.stageCount; i++) {
 			ImGui::PushID(i);
@@ -2197,7 +2262,7 @@ void RenderEditorProject()
 
 	ImGui::Separator();
 
-	// Aplicar projeto ao jogo (recarrega tudo na mem�ria)
+	// Aplicar projeto ao jogo (recarrega tudo na memoria)
 	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
 	if (ImGui::Button("Aplicar ao Jogo (recarregar configs)", ImVec2(-1, 0))) {
 		if (gameProject.playerConfigPath[0]) LoadPlayerConfig(gameProject.playerConfigPath);

@@ -898,6 +898,7 @@ static void ResetBossDemo()
 	s_demoBX = (editorBossConfig.startX != 0.0f) ? editorBossConfig.startX : PREVIEW_CX;
 	s_demoBY = (editorBossConfig.startY != 0.0f) ? editorBossConfig.startY : 0.5f;
 	s_demoBActIdx = 0; s_demoBTimer = 0.0f;
+	for (int i = 0; i < BOSS_MAX_FAMILIARS; i++) s_demoFamAngles[i] = 0.0f;
 	s_demoBInit = true;
 }
 
@@ -1122,9 +1123,13 @@ static void RenderPreview_Boss()
 	float hw = (editorBossConfig.width > 0) ? editorBossConfig.width / 2.0f : 0.1f;
 	float hh = (editorBossConfig.height > 0) ? editorBossConfig.height / 2.0f : 0.1f;
 
-	// Use configured start position (or center as fallback)
-	float startCX = (editorBossConfig.startX != 0.0f) ? editorBossConfig.startX : PREVIEW_CX;
-	float startCY = (editorBossConfig.startY != 0.0f) ? editorBossConfig.startY : 0.5f;
+	// Posicao inicial em NDC do stage (-1..1). O fallback antigo usava
+	// PREVIEW_CX (0.47), que escondia o boss da metade esquerda do stage
+	// quando o painel era colapsado para edicao em tela cheia. Como o
+	// BossConfig zerado coincide com o centro da tela, este e' um default
+	// visivel e tambem consistente com a posicao real em gameplay.
+	float startCX = editorBossConfig.startX;
+	float startCY = editorBossConfig.startY;
 	float cx = startCX, cy = startCY;
 
 	// Determine current HP phase for drawing targets
@@ -1144,11 +1149,15 @@ static void RenderPreview_Boss()
 				switch (act.type) {
 				case BOSS_ACT_MOVE_TO: {
 					float dx = act.targetX - s_demoBX, dy = act.targetY - s_demoBY, len = sqrtf(dx * dx + dy * dy);
-					if (len < 0.01f) {
+					float sp = (act.speed > 0) ? act.speed : 0.01f;
+					// Snap-to-target: evita o flicker visto no runtime
+					// (oscilacao quando sp ultrapassa a distancia restante).
+					if (len <= sp || len < 0.005f) {
+						s_demoBX = act.targetX; s_demoBY = act.targetY;
 						s_demoBActIdx++; s_demoBTimer = 0;
 					}
 					else {
-						float sp = (act.speed > 0) ? act.speed : 0.01f; s_demoBX += (dx / len) * sp; s_demoBY += (dy / len) * sp;
+						s_demoBX += (dx / len) * sp; s_demoBY += (dy / len) * sp;
 					}
 					break;
 				}
@@ -1279,8 +1288,11 @@ void RenderEditor()
 	float clearColor[4] = { 0.08f, 0.08f, 0.12f, 1.0f };
 	deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
 
-	// Linha divisoria (borda direita do painel ImGui) — nao desenhar no Stage (fullscreen)
-	if (currentEditorMode != EDITOR_MODE_STAGE)
+	// Linha divisoria (borda direita do painel ImGui) — nao desenhar quando
+	// a aba usa o stage inteiro (Stage e Boss), onde o preview ocupa todo
+	// o viewport e nao ha' "borda" fixa do painel.
+	if (currentEditorMode != EDITOR_MODE_STAGE &&
+		currentEditorMode != EDITOR_MODE_BOSS)
 		DrawQuadColor(-0.05f, 0.0f, 0.003f, 1.0f, 0.25f, 0.25f, 0.30f, 1.0f);
 
 	switch (currentEditorMode) {

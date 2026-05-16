@@ -145,7 +145,7 @@ std::vector<DroppedItem> droppedItems;
 std::vector<Portal> portals;
 
 // ==========================================
-// CONFIGS DO EDITOR � defaults
+// CONFIGS DO EDITOR - defaults
 // ==========================================
 
 ObstacleConfig editorObstacleConfig = {
@@ -159,7 +159,7 @@ char editorObstacleWidthInput[32] = "0.3";
 char editorObstacleHeightInput[32] = "0.02";
 char editorObstacleTexturePathInput[256] = "";
 
-// Boss � inicializado com zeros; campos preenchidos no editor
+// Boss - inicializado com zeros; campos preenchidos no editor
 BossConfig editorBossConfig = {};
 
 // Block/Enemy template

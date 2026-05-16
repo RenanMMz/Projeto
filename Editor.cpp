@@ -26,9 +26,21 @@ bool LoadGameProject(const char* fullPath);
 // UTILITARIOS INTERNOS
 // ==========================================
 
-// Estado do colapso do painel do editor. Usado pelas abas Stage e Boss,
-// que precisam do stage inteiro visivel para posicionar entidades/movimento.
-static bool s_editorPanelCollapsed = false;
+// Visibilidade de cada janela do editor. Cada panel agora e' uma janela
+// ImGui independente — usuario abre/fecha via menu Visualizar ou pelo X
+// do header. ImGui salva posicao/tamanho automaticamente em imgui.ini.
+static bool s_showProjeto   = true;
+static bool s_showJogador   = false;
+static bool s_showBola      = false;
+static bool s_showStage     = true;
+static bool s_showObstaculo = false;
+static bool s_showInimigo   = false;
+static bool s_showBoss      = false;
+static bool s_showMenu      = false;
+static bool s_showPortal    = false;
+
+// Trigger para exibir a janela "Sobre".
+static bool s_showAbout     = false;
 
 static void LoadSRV(const char* path, ID3D11ShaderResourceView** srv)
 {
@@ -1421,12 +1433,7 @@ static void BossScriptEditor(BossScript& script, const char* uid)
 void RenderEditorBoss()
 {
 	ImGui::Text("=== EDITOR DE BOSS ===");
-	// Esconder painel: o boss usa o stage inteiro (-1..1 NDC) para
-	// movimentacao; sem colapsar, metade da arena fica atras do painel.
-	if (ImGui::Button("< Esconder Painel##boss"))
-		s_editorPanelCollapsed = true;
-	ImGui::SameLine();
-	ImGui::TextDisabled("(colapse para ver o stage completo)");
+	ImGui::TextDisabled("Feche outras janelas para usar o stage inteiro");
 	ImGui::Separator();
 	// Demo toggle
 	if (editorDemoActive) {
@@ -1702,103 +1709,166 @@ void RenderEditorPortal()
 // RENDER DO EDITOR (tabs + viewport)
 // ==========================================
 
+// Helper: abre uma janela do editor, dispara mudanca de EditorMode quando
+// ganha foco (preview-tracking) e desativa o demo na troca de painel ativo.
+// Retorna true se o conteudo da janela deve ser desenhado (false = janela
+// colapsada). O caller deve SEMPRE chamar ImGui::End() em seguida — esta e'
+// a convencao Begin/End do ImGui.
+// `visiblePtr` recebe o flag de visibilidade (NULL = sem botao X).
+static bool BeginEditorWindow(const char* title, bool* visiblePtr,
+                              EditorMode modeOnFocus,
+                              const ImVec2& initialPos,
+                              const ImVec2& initialSize)
+{
+	ImGui::SetNextWindowPos(initialPos, ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(initialSize, ImGuiCond_FirstUseEver);
+	const bool open = ImGui::Begin(title, visiblePtr);
+	// Preview-tracking: a janela focada controla o que o viewport mostra.
+	// Trocar de painel ativo zera o demo (assim como o sistema antigo
+	// de tabs fazia, evitando overlay de bala/movimento ao mudar de tela).
+	if (open && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+		if (currentEditorMode != modeOnFocus) {
+			currentEditorMode = modeOnFocus;
+			editorDemoActive  = false;
+		}
+	}
+	return open;
+}
+
 void RenderEditorUI_NoNewFrame()
 {
-	// Altura do painel acompanha a altura da janela (em vez de fixar 600px).
-	// Em resolucoes maiores isso evita um grande espaco morto abaixo do
-	// painel enquanto o conteudo das abas rola dentro de uma area pequena.
-	ImGuiIO& io = ImGui::GetIO();
-	float panelH = io.DisplaySize.y;
-
-	// Permite colapsar o painel para dar mais espaco em telas onde o stage
-	// inteiro precisa ser visivel (Stage e Boss — este ultimo precisa do
-	// stage completo para posicionar MOVE_TO/TELEPORT atraves da arena).
-	const bool collapsibleMode =
-		(currentEditorMode == EDITOR_MODE_STAGE ||
-		 currentEditorMode == EDITOR_MODE_BOSS);
-	if (s_editorPanelCollapsed && collapsibleMode) {
-		// Painel fino com botao de expandir
-		ImGui::SetNextWindowPos(ImVec2(0, 0));
-		ImGui::SetNextWindowSize(ImVec2(32, panelH));
-		ImGui::Begin("##collapsed", nullptr,
-			ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-			ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
-			ImGuiWindowFlags_NoScrollbar);
-		if (ImGui::Button(">", ImVec2(20, 40)))
-			s_editorPanelCollapsed = false;
-		ImGui::End();
-		ImGui::Render(); ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-		return;
-	}
-
-	ImGui::SetNextWindowPos(ImVec2(0, 0));
-	// Constraint: largura entre 240 e 720 px; altura travada na janela.
-	// Usuario pode arrastar a borda direita para ajustar conforme prefira.
-	ImGui::SetNextWindowSizeConstraints(ImVec2(240.0f, panelH), ImVec2(720.0f, panelH));
-	// Largura inicial 380px (valor antigo). Aplicada apenas na primeira
-	// abertura; em frames subsequentes a largura escolhida pelo usuario
-	// persiste, e a altura e' continuamente reajustada via SetWindowSize
-	// abaixo (a janela pode ter sido redimensionada pelo OS).
-	ImGui::SetNextWindowSize(ImVec2(380.0f, panelH), ImGuiCond_FirstUseEver);
-	ImGui::Begin("TorrouDX Editor", nullptr,
-		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
-	// Reaplica a altura a cada frame para acompanhar resize da janela
-	// principal sem alterar a largura escolhida pelo usuario.
-	ImGui::SetWindowSize(ImVec2(ImGui::GetWindowWidth(), panelH));
-
-	if (ImGui::BeginTabBar("EditorTabs")) {
-		if (ImGui::BeginTabItem("Projeto")) {
-			if (currentEditorMode != EDITOR_MODE_PLAYER)   editorDemoActive = false; RenderEditorProject();  ImGui::EndTabItem();
-		}
-		if (ImGui::BeginTabItem("Jogador")) {
-			if (currentEditorMode != EDITOR_MODE_PLAYER) {
-				currentEditorMode = EDITOR_MODE_PLAYER;   editorDemoActive = false;
-			} RenderEditorPlayer();   ImGui::EndTabItem();
-		}
-		if (ImGui::BeginTabItem("Bola")) {
-			if (currentEditorMode != EDITOR_MODE_BALL) {
-				currentEditorMode = EDITOR_MODE_BALL;     editorDemoActive = false;
-			} RenderEditorBall();     ImGui::EndTabItem();
-		}
-		if (ImGui::BeginTabItem("Stage")) {
-			if (currentEditorMode != EDITOR_MODE_STAGE) {
-				currentEditorMode = EDITOR_MODE_STAGE;    editorDemoActive = false;
+	// ---------------------------------------------------------------
+	// MAIN MENU BAR — ancorada no topo do viewport principal.
+	// Cobre acoes globais (Salvar/Aplicar/Exportar/Sair) e toggles de
+	// visibilidade de cada painel.
+	// ---------------------------------------------------------------
+	if (ImGui::BeginMainMenuBar()) {
+		if (ImGui::BeginMenu("Arquivo")) {
+			if (ImGui::MenuItem("Novo Projeto")) {
+				gameProject = {};
+				gameProjectPath[0] = '\0';
 			}
-			// Botao para colapsar o painel e ver o stage inteiro
-			if (ImGui::Button("< Esconder Painel"))
-				s_editorPanelCollapsed = true;
-			ImGui::SameLine();
-			ImGui::TextDisabled("(colapse para ver o stage completo)");
-			RenderEditorStage();    ImGui::EndTabItem();
+			if (ImGui::MenuItem("Carregar Projeto...")) {
+				char tmp[MAX_PATH] = {};
+				if (OpenJsonLoadDialog(tmp, MAX_PATH, ""))
+					LoadGameProject(tmp);
+			}
+			if (ImGui::MenuItem("Salvar Projeto...")) {
+				char tmp[MAX_PATH] = {};
+				if (OpenJsonSaveDialog(tmp, MAX_PATH, ""))
+					SaveGameProject(tmp);
+			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Aplicar ao Jogo (recarregar configs)")) {
+				if (gameProject.playerConfigPath[0]) LoadPlayerConfig(gameProject.playerConfigPath);
+				if (gameProject.ballConfigPath[0])   LoadBallConfig(gameProject.ballConfigPath);
+				if (gameProject.menuConfigPath[0])   LoadMenuConfig(gameProject.menuConfigPath);
+				if (gameProject.stageCount > 0 && gameProject.stagePaths[0][0])
+					LoadStageConfig(gameProject.stagePaths[0]);
+			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Sair")) {
+				PostMessageW(g_hWnd, WM_CLOSE, 0, 0);
+			}
+			ImGui::EndMenu();
 		}
-		if (ImGui::BeginTabItem("Obstaculo")) {
-			if (currentEditorMode != EDITOR_MODE_OBSTACLE) {
-				currentEditorMode = EDITOR_MODE_OBSTACLE; editorDemoActive = false;
-			} RenderEditorObstacle(); ImGui::EndTabItem();
+		if (ImGui::BeginMenu("Visualizar")) {
+			ImGui::MenuItem("Projeto",   nullptr, &s_showProjeto);
+			ImGui::MenuItem("Jogador",   nullptr, &s_showJogador);
+			ImGui::MenuItem("Bola",      nullptr, &s_showBola);
+			ImGui::MenuItem("Stage",     nullptr, &s_showStage);
+			ImGui::MenuItem("Obstaculo", nullptr, &s_showObstaculo);
+			ImGui::MenuItem("Inimigo",   nullptr, &s_showInimigo);
+			ImGui::MenuItem("Boss",      nullptr, &s_showBoss);
+			ImGui::MenuItem("Menu",      nullptr, &s_showMenu);
+			ImGui::MenuItem("Portal",    nullptr, &s_showPortal);
+			ImGui::Separator();
+			if (ImGui::MenuItem("Mostrar tudo")) {
+				s_showProjeto = s_showJogador = s_showBola = s_showStage =
+				s_showObstaculo = s_showInimigo = s_showBoss = s_showMenu =
+				s_showPortal = true;
+			}
+			if (ImGui::MenuItem("Ocultar tudo")) {
+				s_showProjeto = s_showJogador = s_showBola = s_showStage =
+				s_showObstaculo = s_showInimigo = s_showBoss = s_showMenu =
+				s_showPortal = false;
+			}
+			ImGui::EndMenu();
 		}
-		if (ImGui::BeginTabItem("Inimigo")) {
-			if (currentEditorMode != EDITOR_MODE_ENEMY) {
-				currentEditorMode = EDITOR_MODE_ENEMY;    editorDemoActive = false;
-			} RenderEditorEnemy();    ImGui::EndTabItem();
+		if (ImGui::BeginMenu("Ajuda")) {
+			ImGui::MenuItem("Sobre", nullptr, &s_showAbout);
+			ImGui::EndMenu();
 		}
-		if (ImGui::BeginTabItem("Boss")) {
-			if (currentEditorMode != EDITOR_MODE_BOSS) {
-				currentEditorMode = EDITOR_MODE_BOSS;     editorDemoActive = false;
-			} RenderEditorBoss();     ImGui::EndTabItem();
-		}
-		if (ImGui::BeginTabItem("Menu")) {
-			if (currentEditorMode != EDITOR_MODE_MENU) {
-				currentEditorMode = EDITOR_MODE_MENU;     editorDemoActive = false;
-			} RenderEditorMenu();     ImGui::EndTabItem();
-		}
-		if (ImGui::BeginTabItem("Portal")) {
-			if (currentEditorMode != EDITOR_MODE_PORTAL) {
-				currentEditorMode = EDITOR_MODE_PORTAL;   editorDemoActive = false;
-			} RenderEditorPortal();   ImGui::EndTabItem();
-		}
-		ImGui::EndTabBar();
+		ImGui::EndMainMenuBar();
 	}
-	ImGui::End();
+
+	// ---------------------------------------------------------------
+	// PAINEIS — cada um e' uma janela independente, livremente movivel
+	// e redimensionavel. Posicao inicial cascateada do canto superior
+	// esquerdo; ImGui persiste posicao/tamanho em imgui.ini.
+	// ---------------------------------------------------------------
+	const ImVec2 sz(380.0f, 520.0f);
+	if (s_showProjeto) {
+		if (BeginEditorWindow("Projeto", &s_showProjeto, EDITOR_MODE_PLAYER,
+			ImVec2(20.0f, 40.0f), sz)) RenderEditorProject();
+		ImGui::End();
+	}
+	if (s_showJogador) {
+		if (BeginEditorWindow("Jogador", &s_showJogador, EDITOR_MODE_PLAYER,
+			ImVec2(40.0f, 60.0f), sz)) RenderEditorPlayer();
+		ImGui::End();
+	}
+	if (s_showBola) {
+		if (BeginEditorWindow("Bola", &s_showBola, EDITOR_MODE_BALL,
+			ImVec2(60.0f, 80.0f), sz)) RenderEditorBall();
+		ImGui::End();
+	}
+	if (s_showStage) {
+		if (BeginEditorWindow("Stage", &s_showStage, EDITOR_MODE_STAGE,
+			ImVec2(80.0f, 100.0f), sz)) RenderEditorStage();
+		ImGui::End();
+	}
+	if (s_showObstaculo) {
+		if (BeginEditorWindow("Obstaculo", &s_showObstaculo, EDITOR_MODE_OBSTACLE,
+			ImVec2(100.0f, 120.0f), sz)) RenderEditorObstacle();
+		ImGui::End();
+	}
+	if (s_showInimigo) {
+		if (BeginEditorWindow("Inimigo", &s_showInimigo, EDITOR_MODE_ENEMY,
+			ImVec2(120.0f, 140.0f), sz)) RenderEditorEnemy();
+		ImGui::End();
+	}
+	if (s_showBoss) {
+		if (BeginEditorWindow("Boss", &s_showBoss, EDITOR_MODE_BOSS,
+			ImVec2(140.0f, 160.0f), sz)) RenderEditorBoss();
+		ImGui::End();
+	}
+	if (s_showMenu) {
+		if (BeginEditorWindow("Menu", &s_showMenu, EDITOR_MODE_MENU,
+			ImVec2(160.0f, 180.0f), sz)) RenderEditorMenu();
+		ImGui::End();
+	}
+	if (s_showPortal) {
+		if (BeginEditorWindow("Portal", &s_showPortal, EDITOR_MODE_PORTAL,
+			ImVec2(180.0f, 200.0f), sz)) RenderEditorPortal();
+		ImGui::End();
+	}
+
+	// Janela "Sobre" (toggleavel pelo menu Ajuda).
+	if (s_showAbout) {
+		ImGui::SetNextWindowSize(ImVec2(360.0f, 160.0f), ImGuiCond_FirstUseEver);
+		if (ImGui::Begin("Sobre", &s_showAbout, ImGuiWindowFlags_NoCollapse)) {
+			ImGui::Text("TorrouDX Editor");
+			ImGui::Separator();
+			ImGui::TextWrapped("Editor integrado do jogo. Cada painel pode ser "
+				"movido, redimensionado ou fechado independentemente. Use o "
+				"menu Visualizar para abrir os paineis que voce precisar.");
+			ImGui::Separator();
+			if (ImGui::Button("OK", ImVec2(120, 0))) s_showAbout = false;
+		}
+		ImGui::End();
+	}
+
 	ImGui::Render(); ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }
 

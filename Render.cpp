@@ -1288,12 +1288,9 @@ void RenderEditor()
 	float clearColor[4] = { 0.08f, 0.08f, 0.12f, 1.0f };
 	deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
 
-	// Linha divisoria (borda direita do painel ImGui) — nao desenhar quando
-	// a aba usa o stage inteiro (Stage e Boss), onde o preview ocupa todo
-	// o viewport e nao ha' "borda" fixa do painel.
-	if (currentEditorMode != EDITOR_MODE_STAGE &&
-		currentEditorMode != EDITOR_MODE_BOSS)
-		DrawQuadColor(-0.05f, 0.0f, 0.003f, 1.0f, 0.25f, 0.25f, 0.30f, 1.0f);
+	// Sem linha divisoria fixa: no modo multi-window cada painel ImGui
+	// flutua livremente, entao nao existe mais uma "borda direita do
+	// painel" estavel para marcar.
 
 	switch (currentEditorMode) {
 	case EDITOR_MODE_PLAYER:   RenderPreview_Player();   break;

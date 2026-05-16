@@ -102,6 +102,22 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 	IMGUI_CHECKVERSION(); ImGui::CreateContext(); ImGuiIO& io = ImGui::GetIO(); (void)io; io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	ImGui::StyleColorsDark(); ImGui_ImplWin32_Init(g_hWnd); ImGui_ImplDX11_Init(device, deviceContext);
 
+	// Fonte principal do editor: Segoe UI do sistema, tamanho 16 px. Inclui
+	// Latin Extended (acentos PT-BR) — ProggyClean (default) e' apenas ASCII
+	// e por isso o codigo do editor estava todo transliterado.
+	// Em ImGui 1.92+ os glyph ranges sao carregados dinamicamente conforme
+	// a string e' submetida, basta a fonte conter os glifos.
+	{
+		char winDir[MAX_PATH] = {};
+		GetWindowsDirectoryA(winDir, MAX_PATH);
+		char fontPath[MAX_PATH];
+		sprintf_s(fontPath, "%s\\Fonts\\segoeui.ttf", winDir);
+		if (GetFileAttributesA(fontPath) != INVALID_FILE_ATTRIBUTES)
+			io.Fonts->AddFontFromFileTTF(fontPath, 16.0f);
+		// Se a fonte nao for encontrada, ImGui cai automaticamente no
+		// embedded default (ProggyClean) — comportamento anterior.
+	}
+
 	// Auto-load do projeto ao iniciar (falha silenciosamente se nao existir).
 	// Procura-se primeiro o caminho relativo padrao (./game_config.json),
 	// facilitando a distribuicao da pasta do jogo como pacote autocontido.

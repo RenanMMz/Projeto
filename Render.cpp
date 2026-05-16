@@ -833,11 +833,16 @@ static float s_demoEDir = 1.0f, s_demoEAngle = 0.0f;
 static int   s_demoShootT = 0;
 static std::vector<EnemyBullet> s_demoBullets;
 static bool  s_demoEInit = false;
+// Rajada do demo (preview do editor) — espelha a logica do gameplay
+// para que o autor veja o padrao se montando aos poucos.
+static BulletBurst s_demoBurst = {};
 
 static float s_demoBX = 0.47f, s_demoBY = 0.5f;
 static int   s_demoBActIdx = 0;
 static float s_demoBTimer = 0.0f;
 static bool  s_demoBInit = false;
+// Estado por familiar para animacao no preview: angulo de orbita atual.
+static float s_demoFamAngles[BOSS_MAX_FAMILIARS] = {};
 
 // --- helpers de desenho ---
 
@@ -884,6 +889,7 @@ static void ResetEnemyDemo()
 	s_demoEX = PREVIEW_CX; s_demoEY = PREVIEW_CY;
 	s_demoEDir = 1.0f; s_demoEAngle = 0.0f;
 	s_demoShootT = 0; s_demoBullets.clear();
+	s_demoBurst = {};
 	s_demoEInit = true;
 }
 
@@ -983,29 +989,76 @@ static void RenderPreview_Stage()
 	}
 }
 
-static void FireDemoPattern(float ox, float oy)
+// Agenda uma rajada do demo. Para padroes "simultaneos" (leque/radial)
+// emite tudo aqui mesmo; para os demais, queue para emissao gradual.
+static void StartDemoBurst(float ox, float oy)
 {
-	int pat = editorBlockConfig.bulletPattern;
-	int cnt = editorBlockConfig.bulletCount;
-	float spd = (editorBlockConfig.bulletSpeed > 0) ? editorBlockConfig.bulletSpeed : 0.007f;
-	float pi2 = 2.0f * 3.14159265f;
-	float pAngle = atan2f(PREVIEW_CY - oy, (PREVIEW_CX - 0.2f) - ox);
-	for (int i = 0; i < cnt; i++) {
-		float a = pAngle;
-		switch (pat) {
-		case 0: {
-			float sp = 1.0f, sa = pAngle - sp / 2.0f; a = (cnt > 1) ? sa + (sp * i / (cnt - 1)) : pAngle;
-		} break;
-		case 1: spd = 0.005f + i * 0.002f; break;
-		case 2: a = pi2 * i / cnt; break;
-		case 3: a = i * 0.5f; spd = 0.003f + i * 0.0003f; break;
-		case 4: a = pi2 * ((float)rand() / RAND_MAX); break;
-		case 5: a = -1.5708f; break;
-		}
-		EnemyBullet b; b.x = ox; b.y = oy; b.size = 0.012f; b.active = true;
+	s_demoBurst.pattern    = editorBlockConfig.bulletPattern;
+	s_demoBurst.count      = (editorBlockConfig.bulletCount > 0)
+	                         ? editorBlockConfig.bulletCount : 1;
+	s_demoBurst.speed      = (editorBlockConfig.bulletSpeed > 0.0f)
+	                         ? editorBlockConfig.bulletSpeed : 0.007f;
+	s_demoBurst.originX    = ox;
+	s_demoBurst.originY    = oy;
+	s_demoBurst.angle      = atan2f(PREVIEW_CY - oy, (PREVIEW_CX - 0.2f) - ox);
+	s_demoBurst.stepFrames = (editorBlockConfig.burstStepFrames > 0)
+	                         ? editorBlockConfig.burstStepFrames : 4;
+	s_demoBurst.idx        = 0;
+
+	auto pushBullet = [](float bx, float by, float a, float spd) {
+		EnemyBullet b; b.x = bx; b.y = by; b.size = 0.012f; b.active = true;
 		b.vx = cosf(a) * spd; b.vy = sinf(a) * spd;
 		s_demoBullets.push_back(b);
+	};
+
+	if (s_demoBurst.pattern == 0 || s_demoBurst.pattern == 2) {
+		const float pi2 = 2.0f * 3.14159265f;
+		for (int i = 0; i < s_demoBurst.count; i++) {
+			float a;
+			if (s_demoBurst.pattern == 0) {
+				float sp = 1.0f;
+				a = (s_demoBurst.count > 1)
+				    ? (s_demoBurst.angle - sp / 2.0f + sp * i / (s_demoBurst.count - 1))
+				    : s_demoBurst.angle;
+			} else {
+				a = pi2 * i / (float)s_demoBurst.count;
+			}
+			pushBullet(ox, oy, a, s_demoBurst.speed);
+		}
+		s_demoBurst.shotsRemaining = 0;
+		return;
 	}
+
+	s_demoBurst.shotsRemaining = s_demoBurst.count;
+	s_demoBurst.subTimer       = s_demoBurst.stepFrames;
+}
+
+static void TickDemoBurst()
+{
+	if (s_demoBurst.shotsRemaining <= 0) return;
+	s_demoBurst.subTimer++;
+	if (s_demoBurst.subTimer < s_demoBurst.stepFrames) return;
+	s_demoBurst.subTimer = 0;
+
+	const int   i      = s_demoBurst.idx;
+	const float pAngle = s_demoBurst.angle;
+	float       spd    = s_demoBurst.speed;
+	float       a      = pAngle;
+	const float pi2    = 2.0f * 3.14159265f;
+
+	switch (s_demoBurst.pattern) {
+	case 1: spd = 0.005f + i * 0.002f; break;
+	case 3: a = i * 0.5f; spd = 0.003f + i * 0.0003f; break;
+	case 4: a = pi2 * ((float)rand() / RAND_MAX); break;
+	case 5: a = -1.5708f; break;
+	default: break;
+	}
+	EnemyBullet b; b.x = s_demoBurst.originX; b.y = s_demoBurst.originY;
+	b.size = 0.012f; b.active = true;
+	b.vx = cosf(a) * spd; b.vy = sinf(a) * spd;
+	s_demoBullets.push_back(b);
+	s_demoBurst.idx++;
+	s_demoBurst.shotsRemaining--;
 }
 
 static void RenderPreview_Enemy()
@@ -1032,10 +1085,18 @@ static void RenderPreview_Enemy()
 			break;
 		default: s_demoEX = PREVIEW_CX; s_demoEY = PREVIEW_CY; break;
 		}
-		// Tiro
+		// Tiro: agenda nova rajada quando a anterior termina e o
+		// intervalo periodico expira. TickDemoBurst emite um tiro por
+		// frame para padroes sequenciais; leque/radial sai todo em
+		// StartDemoBurst. Origem do tiro acompanha a posicao corrente
+		// do inimigo (importante para padroes em movimento — espiral
+		// num inimigo circular nao deixa tiros para tras).
+		s_demoBurst.originX = s_demoEX;
+		s_demoBurst.originY = s_demoEY;
+		TickDemoBurst();
 		int interval = (editorBlockConfig.shootIntervalFrames > 0) ? editorBlockConfig.shootIntervalFrames : 90;
-		if (++s_demoShootT >= interval) {
-			s_demoShootT = 0; FireDemoPattern(s_demoEX, s_demoEY);
+		if (s_demoBurst.shotsRemaining <= 0 && ++s_demoShootT >= interval) {
+			s_demoShootT = 0; StartDemoBurst(s_demoEX, s_demoEY);
 		}
 		// Atualiza balas
 		for (auto& bl : s_demoBullets) {

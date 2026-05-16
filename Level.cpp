@@ -62,6 +62,9 @@ void AddBlockFromConfig(float x, float y, const BlockConfig& cfg, ID3D11ShaderRe
 	b.bulletSpeed = cfg.bulletSpeed;
 	b.shootIntervalFrames = cfg.shootIntervalFrames;
 	b.shootTimer = 0;
+	// Inicializa rajada vazia; stepFrames vem do template (default 4).
+	b.burst = {};
+	b.burst.stepFrames = (cfg.burstStepFrames > 0) ? cfg.burstStepFrames : 4;
 	b.invulnerable = cfg.invulnerable;
 	b.useTexture = cfg.useTexture;
 	b.textureSRV = srv;
@@ -94,6 +97,7 @@ void AddBlocks(float x, float y, float width, float height, int hits, int patter
 	b.textureSRV = nullptr;
 	b.colorR = 0.4f; b.colorG = 0.4f; b.colorB = 0.8f; b.colorA = 1.0f;
 	b.movType = MOV_NONE; b.movDir = 1.0f;
+	b.burst.stepFrames = 4;
 	blocks.push_back(b);
 }
 
@@ -191,6 +195,7 @@ void LoadLevel(const char* filename)
 			b.dropWeights[0] = dw0; b.dropWeights[1] = dw1;
 			b.dropWeights[2] = dw2; b.dropWeights[3] = dw3;
 			b.colorR = 0.4f; b.colorG = 0.4f; b.colorB = 0.8f; b.colorA = 1.0f;
+			b.burst.stepFrames = 4;
 			blocks.push_back(b);
 		}
 		else if (type == 'O') {
@@ -333,6 +338,7 @@ static bool LoadBlockConfigFromFile(const char* path, BlockConfig& cfg)
 		if (line.find("\"bulletCount\"") != std::string::npos) sscanf_s(line.c_str(), " \"bulletCount\": %d,", &cfg.bulletCount);
 		if (line.find("\"bulletSpeed\"") != std::string::npos) sscanf_s(line.c_str(), " \"bulletSpeed\": %f,", &cfg.bulletSpeed);
 		if (line.find("\"shootInterval\"") != std::string::npos) sscanf_s(line.c_str(), " \"shootInterval\": %d,", &cfg.shootIntervalFrames);
+		if (line.find("\"burstStep\"") != std::string::npos) sscanf_s(line.c_str(), " \"burstStep\": %d,", &cfg.burstStepFrames);
 		if (line.find("\"invulnerable\": true") != std::string::npos) cfg.invulnerable = true;
 		if (line.find("\"invulnerable\": false") != std::string::npos) cfg.invulnerable = false;
 		if (line.find("\"useTexture\": true") != std::string::npos) cfg.useTexture = true;

@@ -169,6 +169,7 @@ BlockConfig editorBlockConfig = {
 	false,              // useTexture
 	1,                  // maxHits
 	0, 1, 0.006f, 60,   // bulletPattern, count, speed, interval
+	4,                  // burstStepFrames (intervalo entre tiros da rajada)
 	false,              // invulnerable
 	MOV_NONE, 0.0f, 0.3f, 0.2f, // movType, speed, amplitude, radius
 	{ true, { true, false, false, false }, { 1.0f, 0.0f, 0.0f, 0.0f } }

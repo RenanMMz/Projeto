@@ -59,6 +59,92 @@ void SpawnEnemyBulletAngle(float startX, float startY, float angleRadian, float 
 }
 
 // ==========================================
+// RAJADAS DE TIRO (BURST)
+// Em vez de spawnar todos os tiros do padrao no mesmo frame, agendamos uma
+// rajada que emite um tiro a cada `stepFrames` frames. Isso preserva a
+// forma do padrao visualmente — ex: o circulo (pattern 2) gira em torno
+// do inimigo conforme os projeteis sao emitidos.
+// ==========================================
+
+static void StartBurst(BulletBurst& brst, int pattern, int count, float speed,
+                       float originX, float originY, float angle, int stepFrames)
+{
+    brst.pattern        = pattern;
+    brst.count          = (count > 0) ? count : 1;
+    brst.speed          = (speed > 0.0f) ? speed : 0.007f;
+    brst.originX        = originX;
+    brst.originY        = originY;
+    brst.angle          = angle;
+    brst.stepFrames     = (stepFrames > 0) ? stepFrames : 4;
+    brst.idx            = 0;
+
+    // Padroes leque (0) e radial (2) sao "simultaneos" por design: a forma
+    // do padrao so existe se todos os projeteis sairem no mesmo instante.
+    // Para esses casos, emitimos tudo aqui mesmo e zeramos shotsRemaining
+    // para que TickBurst nao tente continuar a rajada.
+    if (pattern == 0 || pattern == 2) {
+        for (int i = 0; i < brst.count; i++) {
+            float a = brst.angle;
+            if (pattern == 0) {
+                const float spread = 1.0f;
+                a = (brst.count > 1)
+                    ? (brst.angle - spread * 0.5f + spread * i / (brst.count - 1))
+                    : brst.angle;
+            } else { // pattern == 2
+                a = (2.0f * 3.14159265f * i) / (float)brst.count;
+            }
+            SpawnEnemyBulletAngle(originX, originY, a, brst.speed);
+        }
+        brst.shotsRemaining = 0;
+        return;
+    }
+
+    // Padroes sequenciais (1, 3, 5, ...): subTimer comeca em stepFrames
+    // para que o primeiro tiro saia imediatamente no proximo TickBurst.
+    brst.shotsRemaining = brst.count;
+    brst.subTimer       = brst.stepFrames;
+}
+
+// Emite no maximo um tiro da rajada por chamada (frame). Sai cedo se nao
+// houver rajada ativa. A posicao de spawn (brst.originX/Y) deve ser
+// atualizada pelo chamador a cada frame para que o tiro saia da posicao
+// atual do inimigo — caso contrario inimigos em movimento "deixam tiros
+// para tras" presos ao local onde a rajada comecou.
+static void TickBurst(BulletBurst& brst)
+{
+    if (brst.shotsRemaining <= 0) return;
+    brst.subTimer++;
+    if (brst.subTimer < brst.stepFrames) return;
+    brst.subTimer = 0;
+
+    const int   i      = brst.idx;
+    const float pAngle = brst.angle;
+    float       spd    = brst.speed;
+    float       a      = pAngle;
+
+    // Padroes 0 (leque) e 2 (radial) sao tratados em StartBurst (instantaneo).
+    // Aqui processamos apenas os padroes que justificam emissao gradual.
+    switch (brst.pattern) {
+    case 1: // mesma direcao, velocidades crescentes
+        spd = 0.005f + i * 0.002f;
+        break;
+    case 3: // espiral
+        a = i * 0.5f;
+        spd = 0.003f + i * 0.0003f;
+        break;
+    case 5: // reto para baixo
+        a = -1.5708f;
+        break;
+    default:
+        break;
+    }
+
+    SpawnEnemyBulletAngle(brst.originX, brst.originY, a, spd);
+    brst.idx++;
+    brst.shotsRemaining--;
+}
+
+// ==========================================
 // INICIALIZACAO
 // ==========================================
 
@@ -304,28 +390,12 @@ void UpdateBall()
                 score += 10 * combo;
                 block.iFrameBlock = true;
                 block.iFrameBlockTimer = 60 * 2;
-                // Tiro ao ser atingido
+                // Tiro ao ser atingido — agenda rajada gradual (um tiro por
+                // `stepFrames` frames). UpdateBlocks emitira os projeteis.
                 float pAngle = atan2f(paddleY - block.y, paddleX - block.x);
-                float spd = (block.bulletSpeed > 0.0f) ? block.bulletSpeed : 0.007f;
-                for (int i = 0; i < block.bulletCount; i++) {
-                    if (block.bulletPattern == 0) {
-                        float spread = 1.0f, startAngle = pAngle - spread / 2.0f;
-                        float a = (block.bulletCount > 1)
-                            ? startAngle + (spread * i / (block.bulletCount - 1))
-                            : pAngle;
-                        SpawnEnemyBulletAngle(block.x, block.y, a, spd);
-                    }
-                    else if (block.bulletPattern == 1) {
-                        SpawnEnemyBulletAngle(block.x, block.y, pAngle, 0.005f + i * 0.002f);
-                    }
-                    else if (block.bulletPattern == 2) {
-                        float a = (2.0f * 3.14159265f * i) / block.bulletCount;
-                        SpawnEnemyBulletAngle(block.x, block.y, a, spd);
-                    }
-                    else if (block.bulletPattern == 3) {
-                        SpawnEnemyBulletAngle(block.x, block.y, i * 0.5f, 0.003f + i * 0.0003f);
-                    }
-                }
+                StartBurst(block.burst, block.bulletPattern, block.bulletCount,
+                           block.bulletSpeed, block.x, block.y, pAngle,
+                           block.burst.stepFrames);
                 break;
             }
         }
@@ -461,34 +531,26 @@ void UpdateBlocks()
             if (b.iFrameBlockTimer <= 0) b.iFrameBlock = false;
         }
 
-        // Tiro periodico (blocos que atiram com intervalo proprio)
-        if (b.shootIntervalFrames > 0) {
+        // Continuacao de rajada em andamento — emite no maximo um tiro por
+        // frame, independente de o bloco ter intervalo periodico ou estar
+        // reagindo a um hit (caso burst foi iniciado em UpdateBall).
+        // Atualiza a origem para a posicao atual do bloco a cada frame: se
+        // o inimigo se move enquanto a rajada esta ativa (espiral, etc.),
+        // os tiros sairao da posicao corrente, nao do local de inicio.
+        b.burst.originX = b.x;
+        b.burst.originY = b.y;
+        TickBurst(b.burst);
+
+        // Tiro periodico (blocos que atiram com intervalo proprio): so inicia
+        // nova rajada quando a anterior terminou, para evitar acumulo.
+        if (b.shootIntervalFrames > 0 && b.burst.shotsRemaining <= 0) {
             b.shootTimer++;
             if (b.shootTimer >= b.shootIntervalFrames) {
                 b.shootTimer = 0;
                 float pAngle = atan2f(paddleY - b.y, paddleX - b.x);
-                float spd = (b.bulletSpeed > 0.0f) ? b.bulletSpeed : 0.007f;
-                for (int i = 0; i < b.bulletCount; i++) {
-                    if (b.bulletPattern == 0) {
-                        float spread = 1.0f, sa = pAngle - spread / 2.0f;
-                        float a = (b.bulletCount > 1)
-                            ? sa + (spread * i / (b.bulletCount - 1)) : pAngle;
-                        SpawnEnemyBulletAngle(b.x, b.y, a, spd);
-                    }
-                    else if (b.bulletPattern == 1) {
-                        SpawnEnemyBulletAngle(b.x, b.y, pAngle, 0.005f + i * 0.002f);
-                    }
-                    else if (b.bulletPattern == 2) {
-                        float a = (2.0f * 3.14159265f * i) / b.bulletCount;
-                        SpawnEnemyBulletAngle(b.x, b.y, a, spd);
-                    }
-                    else if (b.bulletPattern == 3) {
-                        SpawnEnemyBulletAngle(b.x, b.y, i * 0.5f, 0.003f + i * 0.0003f);
-                    }
-                    else if (b.bulletPattern == 5) {
-                        SpawnEnemyBulletAngle(b.x, b.y, -1.5708f, spd); // fixo para baixo
-                    }
-                }
+                StartBurst(b.burst, b.bulletPattern, b.bulletCount,
+                           b.bulletSpeed, b.x, b.y, pAngle,
+                           b.burst.stepFrames);
             }
         }
 
@@ -741,6 +803,15 @@ void UpdateBoss()
         }
     }
 
+    // Continua qualquer rajada principal do boss em andamento (uma bala
+    // por TickBurst). Esta chamada e' independente do script — assim, mesmo
+    // que a acao SHOOT_TIMED ja' tenha avancado, os tiros pendentes saem.
+    // Atualiza a origem com a posicao atual do boss para acompanhar
+    // movimento durante a rajada.
+    g_boss.burst.originX = g_boss.x;
+    g_boss.burst.originY = g_boss.y;
+    TickBurst(g_boss.burst);
+
     // Script execution — SCRIPTED / STATIC / STATIC_FAMILIARS all drive through hpPhases
     if (cfg.archetype != BOSS_ARCH_MULTIPART && cfg.hpPhaseCount > 0) {
         const BossScript& sc = cfg.hpPhases[g_boss.currentPhase].script;
@@ -753,8 +824,18 @@ void UpdateBoss()
             case BOSS_ACT_MOVE_TO: {
                 float dx = act.targetX - g_boss.x, dy = act.targetY - g_boss.y;
                 float len = sqrtf(dx * dx + dy * dy);
-                if (len < 0.005f) { done = true; break; }
                 float sp = (act.speed > 0.0f) ? act.speed : 0.01f;
+                // Snap-to-target quando o proximo passo ultrapassaria o
+                // destino. Sem isto, com sp > distancia restante o boss
+                // pula por cima do alvo e a logica `dx/len` inverte de
+                // sinal no proximo frame -> oscilacao infinita (flicker).
+                // O bug so se "desfaz" quando a fase muda e actionIdx zera.
+                if (len <= sp || len < 0.005f) {
+                    g_boss.x = act.targetX;
+                    g_boss.y = act.targetY;
+                    done = true;
+                    break;
+                }
                 g_boss.x += (dx / len) * sp;
                 g_boss.y += (dy / len) * sp;
                 break;
@@ -764,20 +845,12 @@ void UpdateBoss()
             case BOSS_ACT_WAIT:
                 done = g_boss.actionTimer >= act.duration * 60.0f; break;
             case BOSS_ACT_SHOOT_TIMED: {
+                // Inicia a rajada no primeiro frame da acao; o TickBurst no
+                // topo de UpdateBoss emite um tiro por frame ate' acabar.
                 if (g_boss.actionTimer == 1.0f) {
                     float pAngle = atan2f(paddleY - g_boss.y, paddleX - g_boss.x);
-                    float spd = (act.bulletSpeed > 0.0f) ? act.bulletSpeed : 0.007f;
-                    for (int i = 0; i < act.bulletCount; i++) {
-                        float a = pAngle;
-                        if (act.bulletPattern == 0) {
-                            float spr = 1.0f;
-                            a = pAngle - spr * 0.5f + (act.bulletCount > 1
-                                ? spr * i / (act.bulletCount - 1) : 0.0f);
-                        } else if (act.bulletPattern == 2) {
-                            a = (2.0f * 3.14159265f * i) / act.bulletCount;
-                        }
-                        SpawnEnemyBulletAngle(g_boss.x, g_boss.y, a, spd);
-                    }
+                    StartBurst(g_boss.burst, act.bulletPattern, act.bulletCount,
+                               act.bulletSpeed, g_boss.x, g_boss.y, pAngle, 4);
                 }
                 done = g_boss.actionTimer >= act.duration * 60.0f; break;
             }
@@ -828,6 +901,11 @@ void UpdateBoss()
         for (int ni = 0; ni < cfg.nodeCount && ni < BOSS_MAX_NODES; ni++) {
             if (!g_boss.nodeActive[ni]) continue;
             anyAlive = true;
+            // Tick da rajada do node (independente do script atual).
+            // Origem segue a posicao corrente do node.
+            g_boss.nodeBursts[ni].originX = g_boss.nodeX[ni];
+            g_boss.nodeBursts[ni].originY = g_boss.nodeY[ni];
+            TickBurst(g_boss.nodeBursts[ni]);
             const BossScript& sc = cfg.nodes[ni].script;
             if (sc.actionCount == 0) continue;
             const int idx = g_boss.nodeActionIdx[ni] % sc.actionCount;
@@ -841,21 +919,23 @@ void UpdateBoss()
             case BOSS_ACT_MOVE_TO: {
                 float dx = act.targetX - nx, dy = act.targetY - ny;
                 float len = sqrtf(dx * dx + dy * dy);
-                if (len < 0.005f) { ndone = true; break; }
                 float sp = (act.speed > 0.0f) ? act.speed : 0.01f;
+                // Mesmo snap-to-target do boss principal — evita oscilacao
+                // quando sp excede a distancia residual ate o alvo.
+                if (len <= sp || len < 0.005f) {
+                    nx = act.targetX; ny = act.targetY;
+                    ndone = true; break;
+                }
                 nx += (dx / len) * sp; ny += (dy / len) * sp; break;
             }
             case BOSS_ACT_TELEPORT: nx = act.targetX; ny = act.targetY; ndone = true; break;
             case BOSS_ACT_WAIT:     ndone = nt >= act.duration * 60.0f; break;
             case BOSS_ACT_SHOOT_TIMED:
+                // Inicia rajada gradual para o node; ticks aplicados abaixo.
                 if (nt == 1.0f) {
                     float pAngle = atan2f(paddleY - ny, paddleX - nx);
-                    float spd = (act.bulletSpeed > 0.0f) ? act.bulletSpeed : 0.007f;
-                    for (int i = 0; i < act.bulletCount; i++) {
-                        float a = (act.bulletPattern == 2)
-                            ? (2.0f * 3.14159265f * i / act.bulletCount) : pAngle;
-                        SpawnEnemyBulletAngle(nx, ny, a, spd);
-                    }
+                    StartBurst(g_boss.nodeBursts[ni], act.bulletPattern,
+                               act.bulletCount, act.bulletSpeed, nx, ny, pAngle, 4);
                 }
                 ndone = nt >= act.duration * 60.0f; break;
             default: ndone = true; break;
@@ -883,14 +963,21 @@ void UpdateBoss()
                              sinf(g_boss.familiarAngles[i]) * fam.orbitRadius;
             const float interval = (fam.shootIntervalSec > 0.0f)
                 ? fam.shootIntervalSec * 60.0f : 120.0f;
-            g_boss.familiarShootTimers[i]++;
-            if (g_boss.familiarShootTimers[i] >= interval) {
-                g_boss.familiarShootTimers[i] = 0.0f;
-                float pAngle = atan2f(paddleY - fy, paddleX - fx);
-                float spd    = (fam.bulletSpeed > 0.0f) ? fam.bulletSpeed : 0.007f;
-                for (int bi = 0; bi < fam.bulletCount; bi++) {
-                    float a = pAngle + (bi - fam.bulletCount / 2) * 0.3f;
-                    SpawnEnemyBulletAngle(fx, fy, a, spd);
+
+            // Continua rajada do familiar (gradual)
+            // Atualiza a origem em curso para acompanhar a orbita.
+            g_boss.familiarBursts[i].originX = fx;
+            g_boss.familiarBursts[i].originY = fy;
+            TickBurst(g_boss.familiarBursts[i]);
+
+            // Inicia nova rajada apenas quando a anterior terminou.
+            if (g_boss.familiarBursts[i].shotsRemaining <= 0) {
+                g_boss.familiarShootTimers[i]++;
+                if (g_boss.familiarShootTimers[i] >= interval) {
+                    g_boss.familiarShootTimers[i] = 0.0f;
+                    float pAngle = atan2f(paddleY - fy, paddleX - fx);
+                    StartBurst(g_boss.familiarBursts[i], fam.bulletPattern,
+                               fam.bulletCount, fam.bulletSpeed, fx, fy, pAngle, 4);
                 }
             }
         }

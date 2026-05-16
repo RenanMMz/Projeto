@@ -72,6 +72,21 @@ struct DroppedItem {
 	bool  active;
 };
 
+// Rajada (burst) de tiros. Em vez de spawnar todos os projeteis de um
+// padrao no mesmo frame (visualmente "instantaneo"), a rajada emite um
+// tiro a cada `stepFrames` frames preservando a forma do padrao.
+struct BulletBurst {
+	int   shotsRemaining;  // tiros que ainda falta emitir
+	int   idx;             // indice do proximo tiro (0..count-1)
+	int   subTimer;        // frames desde o ultimo tiro da rajada
+	int   stepFrames;      // intervalo (frames) entre tiros consecutivos
+	int   pattern;         // padrao do tiro (0..5)
+	int   count;           // total de tiros da rajada
+	float speed;           // velocidade base
+	float angle;           // angulo de referencia capturado no inicio
+	float originX, originY;
+};
+
 struct Block {
 	float x, y, width, height;
 	bool  active;
@@ -82,6 +97,9 @@ struct Block {
 	float bulletSpeed;
 	int   shootIntervalFrames;
 	int   shootTimer;
+	// Rajada (spawn gradual). Inicializada zero em todos os blocks
+	// criados; default de stepFrames vem do BlockConfig (ou 4 frames).
+	BulletBurst burst;
 	// Invulnerabilidade
 	bool  invulnerable;
 	// iFrame pos-hit
@@ -165,6 +183,7 @@ struct BlockConfig {
 	int   bulletCount;
 	float bulletSpeed;
 	int   shootIntervalFrames;
+	int   burstStepFrames;       // intervalo (frames) entre tiros da mesma rajada
 	bool  invulnerable;
 	EnemyMovType movType;
 	float movSpeed;
@@ -281,6 +300,10 @@ struct BossState {
 	bool   nodeActive[BOSS_MAX_NODES];
 	int    nodeActionIdx[BOSS_MAX_NODES];
 	float  nodeActionTimer[BOSS_MAX_NODES];
+	// Spawn gradual (uma rajada principal + uma por familiar/node)
+	BulletBurst burst;
+	BulletBurst familiarBursts[BOSS_MAX_FAMILIARS];
+	BulletBurst nodeBursts[BOSS_MAX_NODES];
 };
 
 // ==========================================

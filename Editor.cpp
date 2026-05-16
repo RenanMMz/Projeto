@@ -541,6 +541,7 @@ bool SaveBlockConfig(const char* fullPath)
 	f << "  \"bulletCount\": " << editorBlockConfig.bulletCount << ",\n";
 	f << "  \"bulletSpeed\": " << editorBlockConfig.bulletSpeed << ",\n";
 	f << "  \"shootInterval\": " << editorBlockConfig.shootIntervalFrames << ",\n";
+	f << "  \"burstStep\": " << editorBlockConfig.burstStepFrames << ",\n";
 	f << "  \"invulnerable\": " << (editorBlockConfig.invulnerable ? "true" : "false") << ",\n";
 	f << "  \"movType\": " << (int)editorBlockConfig.movType << ",\n";
 	f << "  \"movSpeed\": " << editorBlockConfig.movSpeed << ",\n";
@@ -571,6 +572,7 @@ bool LoadBlockConfig(const char* fullPath)
 		if (line.find("\"bulletCount\"") != std::string::npos) sscanf_s(line.c_str(), " \"bulletCount\": %d,", &editorBlockConfig.bulletCount);
 		if (line.find("\"bulletSpeed\"") != std::string::npos) sscanf_s(line.c_str(), " \"bulletSpeed\": %f,", &editorBlockConfig.bulletSpeed);
 		if (line.find("\"shootInterval\"") != std::string::npos) sscanf_s(line.c_str(), " \"shootInterval\": %d,", &editorBlockConfig.shootIntervalFrames);
+		if (line.find("\"burstStep\"") != std::string::npos) sscanf_s(line.c_str(), " \"burstStep\": %d,", &editorBlockConfig.burstStepFrames);
 		if (line.find("\"invulnerable\": true") != std::string::npos) editorBlockConfig.invulnerable = true;
 		if (line.find("\"invulnerable\": false") != std::string::npos) editorBlockConfig.invulnerable = false;
 		if (line.find("\"movType\"") != std::string::npos) {
@@ -1222,17 +1224,19 @@ void RenderEditorEnemy()
 
 	if (ImGui::CollapsingHeader("Propriedades", ImGuiTreeNodeFlags_DefaultOpen)) {
 		ImGui::SliderInt("Max Hits##blk", &editorBlockConfig.maxHits, 1, 20);
-		ImGui::Checkbox("Invulner�vel (turret)", &editorBlockConfig.invulnerable);
+		ImGui::Checkbox("Invulneravel (turret)", &editorBlockConfig.invulnerable);
 		if (editorBlockConfig.invulnerable)
-			ImGui::TextDisabled("Bola passa sem dano. So proj�teis inimigos atiram.");
+			ImGui::TextDisabled("Bola passa sem dano. So projeteis inimigos atiram.");
 	}
 
-	if (ImGui::CollapsingHeader("Padr�o de Tiro")) {
-		BulletPatternCombo("Padr�o##blk", editorBlockConfig.bulletPattern);
-		ImGui::SliderInt("Qtd. Proj�teis##blk", &editorBlockConfig.bulletCount, 1, 20);
-		ImGui::SliderFloat("Velocidade Proj�til##blk", &editorBlockConfig.bulletSpeed, 0.001f, 0.03f, "%.4f");
+	if (ImGui::CollapsingHeader("Padrao de Tiro")) {
+		BulletPatternCombo("Padrao##blk", editorBlockConfig.bulletPattern);
+		ImGui::SliderInt("Qtd. Projeteis##blk", &editorBlockConfig.bulletCount, 1, 20);
+		ImGui::SliderFloat("Velocidade Projetil##blk", &editorBlockConfig.bulletSpeed, 0.001f, 0.03f, "%.4f");
 		ImGui::SliderInt("Intervalo de Tiro (frames)", &editorBlockConfig.shootIntervalFrames, 0, 300);
 		ImGui::TextDisabled("0 = somente atira ao ser atingido");
+		ImGui::SliderInt("Espacamento da Rajada (frames)", &editorBlockConfig.burstStepFrames, 1, 30);
+		ImGui::TextDisabled("Frames entre tiros consecutivos da rajada");
 	}
 
 	if (ImGui::CollapsingHeader("Movimentacao")) {

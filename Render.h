@@ -16,6 +16,7 @@ void RenderPortals();
 void RenderOptions();
 void RenderOptionsUI();
 void RenderDebugUI();
+void RenderGameplayHUD();
 void RenderEditor();
 void RenderBoss();
 void DrawObstaclePreview(float centerX, float centerY);

@@ -160,7 +160,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 					break;
 				case GameState::STATE_GAMEPLAY:
 					UpdateGameplay(); RenderGameplay();
-					DrawScore(g_hWnd, score); DrawBlocksRemaining(g_hWnd, blocksRemaining); DrawLives(g_hWnd, life); DrawStage(g_hWnd, stage);
+					// O HUD do jogador (RenderGameplayHUD) e' renderizado mais
+					// abaixo, no bloco de overlays ImGui — funciona em build
+					// editor e em build standalone, ao contrario das chamadas
+					// legadas DrawScore/DrawLives via GDI, que pintavam direto
+					// no HDC e sumiam a cada Present por causa do swap-chain.
 					break;
 				case GameState::STATE_EDITOR:
 					if (g_isEditorEnabled) {
@@ -179,15 +183,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 				if (currentState == GameState::STATE_START_MENU) {
 					RenderMenuTextOverlay();
 				}
+				else if (currentState == GameState::STATE_GAMEPLAY) {
+					// HUD do jogador roda em qualquer build (editor ou standalone).
+					RenderGameplayHUD();
+				}
 				else if (g_isEditorEnabled) {
 					if (currentState == GameState::STATE_EDITOR) {
 						RenderEditorUI();
 					}
 					else if (currentState == GameState::STATE_OPTIONS) {
 						RenderOptionsUI();
-					}
-					else {
-						RenderDebugUI();
 					}
 				}
 				else if (currentState == GameState::STATE_OPTIONS) {

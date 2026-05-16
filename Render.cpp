@@ -1173,27 +1173,134 @@ void RenderEditor()
 // ==========================================
 void RenderDebugUI()
 {
+	// Mantido como wrapper para compatibilidade — o overlay de gameplay
+	// agora e' uma HUD propria (RenderGameplayHUD), nao um debug widget.
+	RenderGameplayHUD();
+}
+
+// ==========================================
+// HUD DO GAMEPLAY - overlay ImGui exibido durante STATE_GAMEPLAY.
+// ----------------------------------------------------------------------
+// Substitui as antigas chamadas DrawScore/DrawLives/DrawStage via GDI,
+// que pintavam direto no HDC do hwnd e sumiam a cada Present (flicker).
+// Funciona em build editor e em build standalone (g_isEditorEnabled=false).
+//
+// Layout:
+//   [VIDAS x N]                    [STAGE N]                   [SCORE 1234]
+//                                  [HP do boss, quando ativo]   [COMBO xN]
+//   ...
+//   [Blocos: N]  (canto inferior esquerdo, somente fora de boss)
+//
+// As janelas usam NoBackground + NoInputs + NoNav para nao roubar foco
+// do jogo. Posicionamento absoluto em pixels evita problemas de layout
+// quando a janela e' redimensionada.
+// ==========================================
+void RenderGameplayHUD()
+{
 	ImGui_ImplDX11_NewFrame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();
 
-	// Janela minimalista no canto inferior direito, sem foco
 	ImGuiIO& io = ImGui::GetIO();
-	ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 160.0f, io.DisplaySize.y - 80.0f));
-	ImGui::SetNextWindowSize(ImVec2(155.0f, 75.0f));
-	ImGui::SetNextWindowBgAlpha(0.45f);
-	ImGui::Begin("##dbg", nullptr,
+	const ImGuiWindowFlags flags =
 		ImGuiWindowFlags_NoDecoration |
 		ImGuiWindowFlags_NoInputs |
 		ImGuiWindowFlags_NoNav |
-		ImGuiWindowFlags_NoMove);
+		ImGuiWindowFlags_NoMove |
+		ImGuiWindowFlags_NoSavedSettings |
+		ImGuiWindowFlags_NoBackground |
+		ImGuiWindowFlags_AlwaysAutoResize;
 
-	ImGui::Text("Score : %d", score);
-	ImGui::Text("Vidas  : %d", life);
-	ImGui::Text("Stage  : %d", stage);
-	ImGui::Text("Blocos : %d", blocksRemaining);
-
+	// --- Vidas (topo esquerdo) ---
+	ImGui::SetNextWindowPos(ImVec2(12.0f, 8.0f));
+	ImGui::Begin("##hud_lives", nullptr, flags);
+	ImGui::SetWindowFontScale(1.35f);
+	ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 90, 90, 255));
+	ImGui::Text("VIDAS x %d", (life > 0) ? life : 0);
+	ImGui::PopStyleColor();
 	ImGui::End();
+
+	// --- Stage (topo centro) ---
+	{
+		char buf[32]; sprintf_s(buf, "STAGE %d", stage + 1);
+		ImVec2 textSz = ImGui::CalcTextSize(buf);
+		float scale   = 1.2f;
+		float winW    = textSz.x * scale + 24.0f;
+		ImGui::SetNextWindowPos(ImVec2((io.DisplaySize.x - winW) * 0.5f, 8.0f));
+		ImGui::Begin("##hud_stage", nullptr, flags);
+		ImGui::SetWindowFontScale(scale);
+		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(230, 230, 230, 255));
+		ImGui::TextUnformatted(buf);
+		ImGui::PopStyleColor();
+		ImGui::End();
+	}
+
+	// --- Score + Combo (topo direito) ---
+	{
+		char buf[64]; sprintf_s(buf, "SCORE %d", score);
+		ImVec2 textSz = ImGui::CalcTextSize(buf);
+		float scale   = 1.45f;
+		float winW    = textSz.x * scale + 24.0f;
+		ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - winW - 8.0f, 8.0f));
+		ImGui::Begin("##hud_score", nullptr, flags);
+		ImGui::SetWindowFontScale(scale);
+		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 220, 90, 255));
+		ImGui::TextUnformatted(buf);
+		ImGui::PopStyleColor();
+		if (combo > 1) {
+			ImGui::SetWindowFontScale(scale * 0.7f);
+			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 150, 60, 255));
+			ImGui::Text("COMBO x%d", combo);
+			ImGui::PopStyleColor();
+		}
+		ImGui::End();
+	}
+
+	// --- Boss HP (topo centro, abaixo do STAGE) ---
+	if (currentStageMode == STAGE_BOSS && g_boss.active) {
+		const float barW = 380.0f, barH = 14.0f;
+		const float winW = barW + 16.0f;
+		const float winX = (io.DisplaySize.x - winW) * 0.5f;
+		const float winY = 42.0f;
+		ImGui::SetNextWindowPos(ImVec2(winX, winY));
+		ImGui::SetNextWindowSize(ImVec2(winW, 0.0f));
+		ImGui::Begin("##hud_boss", nullptr,
+			ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+			ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove |
+			ImGuiWindowFlags_NoSavedSettings);
+		if (g_boss.config.name[0]) {
+			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 110, 110, 255));
+			ImGui::TextUnformatted(g_boss.config.name);
+			ImGui::PopStyleColor();
+		}
+		float frac = (g_boss.config.maxHP > 0)
+			? (float)g_boss.hp / (float)g_boss.config.maxHP : 0.0f;
+		if (frac < 0.0f) frac = 0.0f;
+		if (frac > 1.0f) frac = 1.0f;
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		ImVec2 p = ImGui::GetCursorScreenPos();
+		dl->AddRectFilled(p, ImVec2(p.x + barW, p.y + barH), IM_COL32(40, 40, 40, 230));
+		if (frac > 0.0f) {
+			ImU32 col = (frac > 0.5f) ? IM_COL32(220, 50, 50, 255)
+			                          : IM_COL32(240, 130, 30, 255);
+			dl->AddRectFilled(p, ImVec2(p.x + barW * frac, p.y + barH), col);
+		}
+		dl->AddRect(p, ImVec2(p.x + barW, p.y + barH), IM_COL32(255, 255, 255, 180));
+		ImGui::Dummy(ImVec2(barW, barH));
+		ImGui::End();
+	}
+
+	// --- Blocos restantes (canto inferior esquerdo, somente stages normais) ---
+	if (currentStageMode != STAGE_BOSS) {
+		char buf[32]; sprintf_s(buf, "Blocos: %d", blocksRemaining);
+		ImGui::SetNextWindowPos(ImVec2(12.0f, io.DisplaySize.y - 32.0f));
+		ImGui::Begin("##hud_blocks", nullptr, flags);
+		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(190, 190, 190, 220));
+		ImGui::TextUnformatted(buf);
+		ImGui::PopStyleColor();
+		ImGui::End();
+	}
+
 	ImGui::Render();
 	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }

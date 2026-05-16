@@ -51,6 +51,7 @@ ID3D11ShaderResourceView* editorPlayerRunLeftTexture   = nullptr;
 ID3D11ShaderResourceView* editorPlayerDashRightTexture = nullptr;
 ID3D11ShaderResourceView* editorPlayerDashLeftTexture  = nullptr;
 ID3D11ShaderResourceView* editorProjectileTexture = nullptr;
+ID3D11ShaderResourceView* editorPortalTexture = nullptr;
 ID3D11InputLayout* inputLayoutTextured = nullptr;
 ID3D11BlendState* alphaBlendState = nullptr;
 

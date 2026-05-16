@@ -1616,6 +1616,8 @@ bool LoadPortalConfig(const char* fullPath)
 		}
 	}
 	f.close();
+	// Recarrega o SRV de preview com o sprite recem carregado (se houver).
+	LoadSRV(editorPortalConfig.spritePath, &editorPortalTexture);
 	return true;
 }
 
@@ -1632,7 +1634,10 @@ void RenderEditorPortal()
 	ImGui::Text("=== EDITOR DE PORTAL ===");
 	ImGui::Separator();
 
-	TextureButton("Sprite", editorPortalConfig.spritePath, 256, "spr_portal");
+	// Ao trocar o sprite, recarrega o SRV imediatamente para que a area
+	// de preview a' direita reflita a escolha.
+	if (TextureButton("Sprite", editorPortalConfig.spritePath, 256, "spr_portal"))
+		LoadSRV(editorPortalConfig.spritePath, &editorPortalTexture);
 
 	ImGui::SliderFloat("Largura##portal", &editorPortalConfig.width,  0.02f, 0.50f);
 	ImGui::SliderFloat("Altura##portal",  &editorPortalConfig.height, 0.02f, 0.80f);

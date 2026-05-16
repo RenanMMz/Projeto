@@ -462,6 +462,7 @@ extern ID3D11ShaderResourceView* editorPlayerRunLeftTexture;
 extern ID3D11ShaderResourceView* editorPlayerDashRightTexture;
 extern ID3D11ShaderResourceView* editorPlayerDashLeftTexture;
 extern ID3D11ShaderResourceView* editorProjectileTexture;
+extern ID3D11ShaderResourceView* editorPortalTexture;     // preview do portal
 extern ID3D11InputLayout* inputLayoutTextured;
 extern ID3D11BlendState* alphaBlendState;
 

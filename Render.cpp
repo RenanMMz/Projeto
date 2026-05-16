@@ -1197,12 +1197,78 @@ static void RenderPreview_Boss()
 	else
 		DrawQuadColor(cx, cy, hw, hh, 0.9f, 0.2f, 0.2f, 1.0f);
 
-	// Barra de HP (topo da area de preview)
-	float barW = 0.35f, barFill = editorDemoBossHPPct * barW;
-	float barY = PREV_T - 0.08f, barCX = PREV_L + 0.05f + barW / 2.0f;
-	DrawQuadColor(barCX, barY, barW / 2.0f, 0.025f, 0.3f, 0.3f, 0.3f, 1.0f);
+	// Familiares (BOSS_ARCH_STATIC_FAMILIARS) — desenha a orbita pontilhada
+	// + o familiar sobre o ponto atual da orbita. Sem demo ativo, posiciona
+	// no angulo inicial (angle=0). Com demo, o angulo avanca conforme
+	// fam.orbitSpeed (mesma logica de gameplay).
+	if (editorBossConfig.archetype == BOSS_ARCH_STATIC_FAMILIARS) {
+		for (int i = 0; i < editorBossConfig.familiarCount && i < BOSS_MAX_FAMILIARS; i++) {
+			const FamiliarConfig& fam = editorBossConfig.familiars[i];
+			if (editorDemoActive) s_demoFamAngles[i] += fam.orbitSpeed;
+			const float ang   = s_demoFamAngles[i];
+			const float ocx   = cx + fam.relOffsetX;
+			const float ocy   = cy + fam.relOffsetY;
+			const float fx    = ocx + cosf(ang) * fam.orbitRadius;
+			const float fy    = ocy + sinf(ang) * fam.orbitRadius;
+
+			// Orbita: 24 pontos ao redor do centro relativo do familiar.
+			const int   kOrbitDots = 24;
+			for (int k = 0; k < kOrbitDots; k++) {
+				float a = (2.0f * 3.14159265f * k) / kOrbitDots;
+				float dx = ocx + cosf(a) * fam.orbitRadius;
+				float dy = ocy + sinf(a) * fam.orbitRadius;
+				DrawQuadColor(dx, dy, 0.004f, 0.004f, 0.5f, 0.5f, 0.7f, 0.45f);
+			}
+
+			// Familiar (quad laranja sem textura — sprite nao e' carregado
+			// no editor, mas a posicao/orbita ja' fica visivel).
+			DrawQuadColor(fx, fy, 0.022f, 0.022f, 0.95f, 0.6f, 0.15f, 1.0f);
+			// Borda branca para destacar
+			DrawQuadColor(fx, fy + 0.022f, 0.022f, 0.003f, 1.0f, 1.0f, 1.0f, 0.7f);
+			DrawQuadColor(fx, fy - 0.022f, 0.022f, 0.003f, 1.0f, 1.0f, 1.0f, 0.7f);
+		}
+	}
+
+	// Multipart nodes — desenha cada node na sua posicao inicial configurada,
+	// para que o autor possa visualizar a montagem do boss multipartido.
+	if (editorBossConfig.archetype == BOSS_ARCH_MULTIPART) {
+		for (int i = 0; i < editorBossConfig.nodeCount && i < BOSS_MAX_NODES; i++) {
+			const MultipartNode& n = editorBossConfig.nodes[i];
+			DrawQuadColor(n.startX, n.startY, hw * 0.6f, hh * 0.6f, 0.7f, 0.3f, 0.9f, 0.95f);
+			DrawQuadColor(n.startX, n.startY + hh * 0.6f, hw * 0.6f, 0.003f, 1.0f, 1.0f, 1.0f, 0.6f);
+			DrawQuadColor(n.startX, n.startY - hh * 0.6f, hw * 0.6f, 0.003f, 1.0f, 1.0f, 1.0f, 0.6f);
+		}
+	}
+
+	// Barra de HP no topo do stage (NDC). Posicionada perto da borda
+	// superior central para nao colidir com a area de movimentacao.
+	float barW = 0.5f, barFill = editorDemoBossHPPct * barW;
+	float barY = 0.92f, barLeft = -barW * 0.5f;
+	DrawQuadColor(0.0f, barY, barW * 0.5f, 0.025f, 0.3f, 0.3f, 0.3f, 1.0f);
 	if (barFill > 0)
-		DrawQuadColor(PREV_L + 0.05f + barFill / 2.0f, barY, barFill / 2.0f, 0.022f, 0.8f, 0.15f, 0.15f, 1.0f);
+		DrawQuadColor(barLeft + barFill * 0.5f, barY, barFill * 0.5f, 0.022f, 0.8f, 0.15f, 0.15f, 1.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Preview do Portal: desenha o sprite (ou retangulo ciano de fallback)
+// centralizado na area de preview, com as dimensoes do editorPortalConfig.
+// ---------------------------------------------------------------------------
+static void RenderPreview_Portal()
+{
+	float hw = (editorPortalConfig.width  > 0.0f) ? editorPortalConfig.width  * 0.5f : 0.05f;
+	float hh = (editorPortalConfig.height > 0.0f) ? editorPortalConfig.height * 0.5f : 0.075f;
+
+	if (editorPortalTexture) {
+		DrawQuadTexCentered(editorPortalTexture, PREVIEW_CX, PREVIEW_CY, hw, hh);
+	} else {
+		// Sem sprite: retangulo ciano semitransparente com borda, para que
+		// o autor visualize a hitbox/area mesmo sem textura definida.
+		DrawQuadColor(PREVIEW_CX, PREVIEW_CY, hw, hh, 0.1f, 0.7f, 0.9f, 0.85f);
+		DrawQuadColor(PREVIEW_CX, PREVIEW_CY + hh - 0.003f, hw, 0.003f, 1.0f, 1.0f, 1.0f, 0.6f);
+		DrawQuadColor(PREVIEW_CX, PREVIEW_CY - hh + 0.003f, hw, 0.003f, 1.0f, 1.0f, 1.0f, 0.6f);
+		DrawQuadColor(PREVIEW_CX - hw + 0.003f, PREVIEW_CY, 0.003f, hh, 1.0f, 1.0f, 1.0f, 0.6f);
+		DrawQuadColor(PREVIEW_CX + hw - 0.003f, PREVIEW_CY, 0.003f, hh, 1.0f, 1.0f, 1.0f, 0.6f);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1225,6 +1291,7 @@ void RenderEditor()
 	case EDITOR_MODE_ENEMY:    RenderPreview_Enemy();    break;
 	case EDITOR_MODE_BOSS:     RenderPreview_Boss();     break;
 	case EDITOR_MODE_MENU:     RenderMenu();             break;
+	case EDITOR_MODE_PORTAL:   RenderPreview_Portal();   break;
 	}
 }
 

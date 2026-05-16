@@ -1824,13 +1824,161 @@ static std::string BuildJsonEscapedPrefix(const std::string& path)
 	return out;
 }
 
-// Funcao principal: empacota o jogo no diretorio destino.
+// ==========================================
+// APLICACAO DE ICONE (.ico) AO EXECUTAVEL EXPORTADO
+// ----------------------------------------------------------------------
+// Le um arquivo .ico, monta o recurso RT_GROUP_ICON e os recursos RT_ICON
+// correspondentes, e os grava no PE de destino via BeginUpdateResource.
+// Recursos antigos com mesmos IDs sao sobrescritos; quaisquer icones
+// com IDs mais altos permanecem orfaos, mas o icone exibido pelo Windows
+// e' sempre o do grupo com o menor identificador numerico (id=1).
+// ==========================================
+
+#pragma pack(push, 1)
+struct IconDirHeaderDisk {
+	WORD reserved;
+	WORD type;       // 1 = icone
+	WORD count;
+};
+struct IconDirEntryDisk {
+	BYTE  width;
+	BYTE  height;
+	BYTE  colorCount;
+	BYTE  reserved;
+	WORD  planes;
+	WORD  bitCount;
+	DWORD bytesInRes;
+	DWORD imageOffset;
+};
+struct GrpIconDirEntryRes {
+	BYTE  width;
+	BYTE  height;
+	BYTE  colorCount;
+	BYTE  reserved;
+	WORD  planes;
+	WORD  bitCount;
+	DWORD bytesInRes;
+	WORD  id;          // id do recurso RT_ICON correspondente
+};
+#pragma pack(pop)
+
+// Retorna mensagem vazia em caso de sucesso; mensagem nao-vazia descreve o
+// erro encontrado (a exportacao prossegue mesmo sem icone).
+static std::string ApplyIconToExe(const fs::path& exePath, const fs::path& icoPath)
+{
+	std::ifstream ico(icoPath, std::ios::binary);
+	if (!ico.is_open()) return "icone: nao foi possivel abrir o arquivo .ico";
+	std::vector<BYTE> data((std::istreambuf_iterator<char>(ico)),
+	                       std::istreambuf_iterator<char>());
+	ico.close();
+	if (data.size() < sizeof(IconDirHeaderDisk))
+		return "icone: arquivo invalido (header truncado)";
+
+	IconDirHeaderDisk* hdr = (IconDirHeaderDisk*)data.data();
+	if (hdr->type != 1) return "icone: tipo de arquivo nao e' .ico";
+	const int count = hdr->count;
+	if (count <= 0) return "icone: nenhuma imagem no .ico";
+	const size_t needed = sizeof(IconDirHeaderDisk) + (size_t)count * sizeof(IconDirEntryDisk);
+	if (data.size() < needed) return "icone: tabela de entradas truncada";
+
+	IconDirEntryDisk* entries = (IconDirEntryDisk*)(data.data() + sizeof(IconDirHeaderDisk));
+
+	// Valida offsets antes de tocar no PE.
+	for (int i = 0; i < count; i++) {
+		size_t end = (size_t)entries[i].imageOffset + (size_t)entries[i].bytesInRes;
+		if (end > data.size())
+			return "icone: imagem alem do fim do arquivo";
+	}
+
+	// Monta GRPICONDIR: mesmo header + entradas com wId em vez de offset.
+	const size_t grpSize = sizeof(IconDirHeaderDisk) + (size_t)count * sizeof(GrpIconDirEntryRes);
+	std::vector<BYTE> grp(grpSize);
+	memcpy(grp.data(), hdr, sizeof(IconDirHeaderDisk));
+	GrpIconDirEntryRes* g = (GrpIconDirEntryRes*)(grp.data() + sizeof(IconDirHeaderDisk));
+	for (int i = 0; i < count; i++) {
+		g[i].width      = entries[i].width;
+		g[i].height     = entries[i].height;
+		g[i].colorCount = entries[i].colorCount;
+		g[i].reserved   = entries[i].reserved;
+		g[i].planes     = entries[i].planes;
+		g[i].bitCount   = entries[i].bitCount;
+		g[i].bytesInRes = entries[i].bytesInRes;
+		g[i].id         = (WORD)(i + 1);
+	}
+
+	HANDLE hUpd = BeginUpdateResourceW(exePath.wstring().c_str(), FALSE);
+	if (!hUpd) return "icone: BeginUpdateResource falhou";
+
+	WORD lang = MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL);
+	bool ok = true;
+
+	if (!UpdateResourceW(hUpd, RT_GROUP_ICON, MAKEINTRESOURCEW(1), lang,
+	                     grp.data(), (DWORD)grp.size())) {
+		ok = false;
+	}
+	for (int i = 0; i < count && ok; i++) {
+		const BYTE* imgData = data.data() + entries[i].imageOffset;
+		DWORD       imgSize = entries[i].bytesInRes;
+		if (!UpdateResourceW(hUpd, RT_ICON, MAKEINTRESOURCEW(i + 1), lang,
+		                     (LPVOID)imgData, imgSize)) {
+			ok = false;
+		}
+	}
+
+	// `fDiscard=TRUE` descarta as mudancas em caso de erro durante a sequencia.
+	if (!EndUpdateResourceW(hUpd, ok ? FALSE : TRUE))
+		return "icone: EndUpdateResource falhou";
+	if (!ok) return "icone: UpdateResource falhou";
+	return {}; // sucesso
+}
+
+// Sanitiza o nome do jogo para uso simultaneo como nome de pasta e de
+// executavel: remove os caracteres reservados pelo Windows ('<>:"/\\|?*'),
+// caracteres de controle, e apara espacos/pontos finais (que Windows trata
+// como invalidos em nomes de arquivo). Devolve string vazia se nada
+// restou — o chamador deve aplicar um default.
+static std::string SanitizeGameName(const char* input)
+{
+	std::string out;
+	for (const char* p = input; p && *p; p++) {
+		unsigned char c = (unsigned char)*p;
+		if (c < 32) continue;
+		switch (c) {
+		case '<': case '>': case ':': case '"':
+		case '/': case '\\': case '|': case '?': case '*':
+			continue;
+		}
+		out += (char)c;
+	}
+	while (!out.empty() && (out.back() == ' ' || out.back() == '.'))
+		out.pop_back();
+	return out;
+}
+
+// Funcao principal: empacota o jogo no diretorio destino. Cria uma
+// subpasta com o nome do jogo dentro de `destFolder`, copia os arquivos
+// para essa subpasta e renomeia o executavel para `<gameName>.exe`.
+// `iconFile` e' opcional; quando preenchido com um caminho para um .ico
+// valido, o icone e' embedded no PE do executavel copiado.
 // Retorna mensagem de status (vazio em caso de cancelamento).
-static std::string ExportStandalone(const std::string& destFolder)
+static std::string ExportStandalone(const std::string& destFolder,
+                                    const std::string& gameNameInput,
+                                    const std::string& iconFile)
 {
 	if (destFolder.empty()) return "";
+
+	// Resolve o nome final do jogo. Sem entrada valida, cai em "MeuJogo"
+	// para que a exportacao nunca grave arquivos soltos no destino
+	// selecionado pelo usuario.
+	std::string gameName = SanitizeGameName(gameNameInput.c_str());
+	if (gameName.empty()) gameName = "MeuJogo";
+
 	try {
-		fs::path dst(destFolder);
+		fs::path baseDst(destFolder);
+		if (!fs::exists(baseDst)) fs::create_directories(baseDst);
+
+		// Subpasta dentro do destino: dst = <destFolder>/<gameName>
+		fs::path dst = baseDst / gameName;
 		if (!fs::exists(dst)) fs::create_directories(dst);
 		const fs::path dstAbs = fs::absolute(dst).lexically_normal();
 
@@ -1839,6 +1987,10 @@ static std::string ExportStandalone(const std::string& destFolder)
 		GetModuleFileNameA(nullptr, exeBuf, MAX_PATH);
 		fs::path exePath(exeBuf);
 		fs::path exeDir = exePath.parent_path();
+
+		// Nome final do executavel exportado: <gameName>.exe
+		const fs::path exeOutName = fs::path(gameName + ".exe");
+		const fs::path exeOutPath = dst / exeOutName;
 
 		// Guarda anti-recursao: o destino nao pode ser, nem estar contido em,
 		// nem conter, o diretorio do exe ou o engineBase (Documents\TorrouEngine).
@@ -1858,8 +2010,8 @@ static std::string ExportStandalone(const std::string& destFolder)
 			       "Escolha um diretorio independente (ex: C:\\Distribuicao\\MeuJogo).";
 		}
 
-		// 2) Copia o executavel.
-		fs::copy_file(exePath, dst / exePath.filename(),
+		// 2) Copia o executavel ja' com o nome final do jogo.
+		fs::copy_file(exePath, exeOutPath,
 			fs::copy_options::overwrite_existing);
 
 		// 3) DLLs do CRT (Debug). Em Release algumas dessas nem existem;
@@ -1933,14 +2085,35 @@ static std::string ExportStandalone(const std::string& destFolder)
 			reescritos++;
 		}
 
-		char msg[512];
+		// 8) Aplica o icone, se fornecido. Falhas aqui sao reportadas como
+		// aviso, sem invalidar o resto da exportacao.
+		std::string iconStatus = "(nao alterado)";
+		if (!iconFile.empty()) {
+			fs::path icoSrc(iconFile);
+			if (!fs::exists(icoSrc)) {
+				iconStatus = "FALHOU: arquivo .ico nao encontrado";
+			}
+			else {
+				std::string err = ApplyIconToExe(exeOutPath, icoSrc);
+				iconStatus = err.empty() ? "aplicado" : ("FALHOU: " + err);
+			}
+		}
+
+		char msg[1024];
 		sprintf_s(msg, sizeof(msg),
 			"Exportacao concluida.\n"
-			"  Destino: %s\n"
+			"  Jogo: %s\n"
+			"  Pasta criada: %s\n"
+			"  Executavel: %s\n"
 			"  DLLs CRT copiadas: %d\n"
 			"  JSONs reescritos: %d\n"
-			"Verifique o config.json e abra o TG.exe na pasta.",
-			destFolder.c_str(), dllsCopiadas, reescritos);
+			"  Icone do executavel: %s\n"
+			"Abra %s dentro da pasta para iniciar o jogo.",
+			gameName.c_str(),
+			dst.string().c_str(),
+			exeOutName.string().c_str(),
+			dllsCopiadas, reescritos, iconStatus.c_str(),
+			exeOutName.string().c_str());
 		return msg;
 	}
 	catch (const std::exception& ex) {
@@ -2067,6 +2240,24 @@ void RenderEditorProject()
 	// Buffer persistente para o campo de path. Permite ao usuario digitar
 	// manualmente ou aproveitar o ultimo destino escolhido entre cliques.
 	static char s_exportDest[MAX_PATH] = {};
+	// Nome do jogo: usado como nome da subpasta criada dentro do destino
+	// e como nome final do executavel exportado (<gameName>.exe).
+	static char s_exportName[128] = "MeuJogo";
+	// Caminho opcional para o .ico que sera embarcado no executavel.
+	static char s_exportIcon[MAX_PATH] = {};
+
+	ImGui::TextDisabled("Nome do jogo:");
+	ImGui::PushItemWidth(-90);
+	ImGui::InputText("##expname", s_exportName, sizeof(s_exportName));
+	ImGui::PopItemWidth();
+	// Pre-visualiza o nome sanitizado para que o usuario saiba qual
+	// nome de pasta/executavel sera efetivamente criado.
+	{
+		std::string preview = SanitizeGameName(s_exportName);
+		if (preview.empty()) preview = "MeuJogo";
+		ImGui::TextDisabled("-> pasta/.exe: %s / %s.exe",
+			preview.c_str(), preview.c_str());
+	}
 
 	ImGui::TextDisabled("Pasta de destino:");
 	ImGui::PushItemWidth(-90);
@@ -2080,11 +2271,41 @@ void RenderEditorProject()
 		}
 	}
 
+	// Selecao de icone do executavel — opcional. Se vazio, o icone do
+	// binario original e' preservado.
+	ImGui::TextDisabled("Icone do executavel (.ico, opcional):");
+	ImGui::PushItemWidth(-130);
+	ImGui::InputText("##expicon", s_exportIcon, sizeof(s_exportIcon));
+	ImGui::PopItemWidth();
+	ImGui::SameLine();
+	if (ImGui::Button("Procurar...##ico", ImVec2(80, 0))) {
+		char tmp[MAX_PATH] = {};
+		OPENFILENAMEA ofn = {};
+		ofn.lStructSize  = sizeof(ofn);
+		ofn.hwndOwner    = g_hWnd;
+		ofn.lpstrFile    = tmp;
+		ofn.nMaxFile     = MAX_PATH;
+		ofn.lpstrFilter  = "Icone (*.ico)\0*.ico\0Todos arquivos\0*.*\0";
+		ofn.nFilterIndex = 1;
+		ofn.Flags        = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+		if (GetOpenFileNameA(&ofn))
+			strncpy_s(s_exportIcon, tmp, sizeof(s_exportIcon) - 1);
+	}
+	ImGui::SameLine();
+	if (ImGui::SmallButton("X##icoclr")) s_exportIcon[0] = '\0';
+
+	if (s_exportIcon[0]) {
+		std::ifstream t(s_exportIcon); bool ok = t.good(); t.close();
+		ImGui::TextColored(ok ? ImVec4(0.4f, 0.9f, 0.4f, 1.0f)
+		                      : ImVec4(0.9f, 0.4f, 0.4f, 1.0f),
+		                   ok ? "Icone OK" : "Arquivo nao encontrado");
+	}
+
 	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.55f, 0.25f, 1.0f));
 	const bool canExport = (s_exportDest[0] != '\0');
 	if (!canExport) ImGui::BeginDisabled();
 	if (ImGui::Button("Exportar para Standalone", ImVec2(-1, 0))) {
-		s_exportStatus = ExportStandalone(s_exportDest);
+		s_exportStatus = ExportStandalone(s_exportDest, s_exportName, s_exportIcon);
 		if (!s_exportStatus.empty()) ImGui::OpenPopup("Resultado_Export");
 	}
 	if (!canExport) ImGui::EndDisabled();

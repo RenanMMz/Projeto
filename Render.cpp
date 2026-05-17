@@ -183,49 +183,127 @@ void DrawBlocksRemaining(HWND hwnd, int blocksRemaining) {
 	wchar_t buffer[32]; swprintf(buffer, 32, L"Blocks Remaining: %d", blocksRemaining); TextOutW(hdc, 200, 10, buffer, (int)wcslen(buffer)); ReleaseDC(hwnd, hdc);
 }
 
-// Desenha os labels do menu principal sobre os botoes via GDI (TextOutW).
-// Os escapes \xNNNN evitam dependencia do encoding do arquivo-fonte (cedilha/til).
-void DrawMenuText(HWND hwnd) {
-	static const wchar_t* s_labelsW[] = {
-		L"Jogar",
-		L"Configura" L"\x00E7" L"\x00F5" L"es",
-		L"Sair"
-	};
-	const int labelCount = (int)(sizeof(s_labelsW) / sizeof(s_labelsW[0]));
+// ==========================================
+// Carregamento lazy da fonte customizada do menu.
+// ----------------------------------------------------------------------
+// O ImGui mantem um atlas global de fontes (io.Fonts). Para trocar a
+// familia em runtime, e' preciso limpar o atlas, adicionar a nova .ttf,
+// reconstruir o atlas e invalidar as texturas do backend D3D11.
+// A operacao e' cara — por isso so' e' executada quando o campo
+// editorMenuConfig.fontPath muda de fato (comparacao com cache).
+// O tamanho base e' fixo (32 px); o tamanho final do texto e' controlado
+// no AddText, com escalamento via GPU.
+// ==========================================
+static ImFont*     s_menuFont         = nullptr;
+static std::string s_menuFontLastPath = "(uninitialized)";
 
-	HDC hdc = GetDC(hwnd);
-	SetBkMode(hdc, TRANSPARENT);
+static void EnsureMenuFontLoaded()
+{
+	std::string current = editorMenuConfig.fontPath ? editorMenuConfig.fontPath : "";
+	if (current == s_menuFontLastPath) return; // ja carregada
 
-	int fontH = (g_currentHeight > 0) ? max(16, g_currentHeight / 22) : 28;
-	HFONT hFont = CreateFontW(fontH, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-		DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-		ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-	HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
+	ImGuiIO& io = ImGui::GetIO();
+	io.Fonts->Clear();
+	io.Fonts->AddFontDefault(); // fallback obrigatorio
 
-	const float startY = 0.2f, spacing = 0.3f;
-	const float w = (float)((g_currentWidth  > 0) ? g_currentWidth  : 800);
-	const float h = (float)((g_currentHeight > 0) ? g_currentHeight : 600);
-
-	for (int i = 0; i < labelCount && i < mainMenuCount; i++) {
-		bool sel = (selectedMenuIndex == i);
-		SetTextColor(hdc, sel ? RGB(255, 230, 90) : RGB(240, 240, 240));
-
-		float ndcY = startY - i * spacing;
-		int pxYCenter = (int)((1.0f - ndcY) * 0.5f * h);
-
-		const wchar_t* label = s_labelsW[i];
-		int len = (int)wcslen(label);
-		SIZE sz = {};
-		GetTextExtentPoint32W(hdc, label, len, &sz);
-		int pxX = (int)(w * 0.5f) - sz.cx / 2;
-		int pxY = pxYCenter - sz.cy / 2;
-
-		TextOutW(hdc, pxX, pxY, label, len);
+	s_menuFont = nullptr;
+	if (!current.empty()) {
+		// Falha silenciosa: se o arquivo nao existir ou for invalido,
+		// AddFontFromFileTTF retorna nullptr e o overlay cai na fonte default.
+		s_menuFont = io.Fonts->AddFontFromFileTTF(current.c_str(), 32.0f);
 	}
 
-	SelectObject(hdc, hOldFont);
-	DeleteObject(hFont);
-	ReleaseDC(hwnd, hdc);
+	io.Fonts->Build();
+	ImGui_ImplDX11_InvalidateDeviceObjects();
+	ImGui_ImplDX11_CreateDeviceObjects();
+
+	s_menuFontLastPath = current;
+}
+
+// Desenha os labels do menu principal sobre os botoes via ImGui (overlay
+// renderizado no mesmo frame DX, em vez do GDI antigo, que vivia entre o
+// desenho do backbuffer e o Present — provocando flicker visivel).
+// Cor, tamanho e familia da fonte sao parametrizaveis em editorMenuConfig.
+void RenderMenuTextOverlay()
+{
+	// Atualiza o atlas se a familia (caminho .ttf) mudou desde o ultimo frame.
+	// Deve ocorrer ANTES de ImGui_ImplDX11_NewFrame para nao interferir com
+	// recursos em uso no quadro corrente.
+	EnsureMenuFontLoaded();
+
+	ImGui_ImplDX11_NewFrame();
+	ImGui_ImplWin32_NewFrame();
+	ImGui::NewFrame();
+
+	ImGuiIO& io = ImGui::GetIO();
+	const float w = io.DisplaySize.x;
+	const float h = io.DisplaySize.y;
+
+	// Janela fullscreen sem decoracao, transparente e sem captura de input:
+	// serve apenas como camada de texto sobreposta aos botoes do menu.
+	ImGui::SetNextWindowPos(ImVec2(0, 0));
+	ImGui::SetNextWindowSize(ImVec2(w, h));
+	ImGui::SetNextWindowBgAlpha(0.0f);
+	ImGui::Begin("##menu_text", nullptr,
+		ImGuiWindowFlags_NoDecoration |
+		ImGuiWindowFlags_NoInputs |
+		ImGuiWindowFlags_NoNav |
+		ImGuiWindowFlags_NoMove |
+		ImGuiWindowFlags_NoSavedSettings |
+		ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+	// Mesma geometria utilizada por RenderMenu: startY 0.2, spacing 0.3 (NDC).
+	const float startY  = 0.2f;
+	const float spacing = 0.3f;
+
+	// Labels em UTF-8 (flag /utf-8 garante interpretacao correta dos bytes).
+	static const char* s_labels[] = {
+		"Jogar",
+		"Configura\xC3\xA7\xC3\xB5""es", // 'ç' = C3 A7, 'õ' = C3 B5
+		"Sair"
+	};
+	const int labelCount = (int)(sizeof(s_labels) / sizeof(s_labels[0]));
+
+	// Fonte e tamanho parametrizaveis. Quando nao ha fonte custom carregada,
+	// usa-se a default do ImGui (continua respeitando o textSize via AddText).
+	ImFont* font = s_menuFont ? s_menuFont : ImGui::GetFont();
+	float fontSize = (editorMenuConfig.textSize > 4.0f) ? editorMenuConfig.textSize : 24.0f;
+
+	auto toCol = [](float r, float g, float b, float a) {
+		auto clamp01 = [](float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); };
+		return IM_COL32((int)(clamp01(r) * 255.0f),
+		                (int)(clamp01(g) * 255.0f),
+		                (int)(clamp01(b) * 255.0f),
+		                (int)(clamp01(a) * 255.0f));
+	};
+	const ImU32 colNormal = toCol(editorMenuConfig.textColorR,
+	                              editorMenuConfig.textColorG,
+	                              editorMenuConfig.textColorB,
+	                              editorMenuConfig.textColorA);
+	const ImU32 colSelected = toCol(editorMenuConfig.textSelectedColorR,
+	                                editorMenuConfig.textSelectedColorG,
+	                                editorMenuConfig.textSelectedColorB,
+	                                editorMenuConfig.textSelectedColorA);
+
+	for (int i = 0; i < labelCount && i < mainMenuCount; i++) {
+		float ndcY    = startY - i * spacing;
+		float pxYCenter = (1.0f - ndcY) * 0.5f * h;
+
+		const char* label = s_labels[i];
+		ImVec2 sz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
+		float pxX = w * 0.5f - sz.x * 0.5f;
+		float pxY = pxYCenter - sz.y * 0.5f;
+
+		bool sel = (selectedMenuIndex == i);
+		ImGui::GetWindowDrawList()->AddText(font, fontSize,
+			ImVec2(pxX, pxY),
+			sel ? colSelected : colNormal,
+			label);
+	}
+
+	ImGui::End();
+	ImGui::Render();
+	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }
 
 // Desenha quad texturizado arbitrÃ¡rio em NDC
@@ -337,30 +415,6 @@ void RenderMenu() {
 	}
 }
 
-void RenderDiffSelect() {
-	float clearColor[4] = {
-		editorMenuConfig.bgColorR, editorMenuConfig.bgColorG,
-		editorMenuConfig.bgColorB, editorMenuConfig.bgColorA
-	};
-	deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
-	DrawMenuBackground(menuBgTexture);
-	DrawMenuLogo();
-
-	float startY = 0.5f, spacing = 0.3f, buttonWidth = 0.8f, buttonHeight = 0.2f;
-	float colorNormal[4] = { editorMenuConfig.buttonColorR,   editorMenuConfig.buttonColorG,
-								editorMenuConfig.buttonColorB,   editorMenuConfig.buttonColorA };
-	float colorSelected[4] = { editorMenuConfig.selectedColorR, editorMenuConfig.selectedColorG,
-								editorMenuConfig.selectedColorB, editorMenuConfig.selectedColorA };
-
-	for (int i = 0; i < difficultyCount; i++) {
-		bool sel = (selectedMenuIndex == i);
-		float yCenter = startY - i * spacing;
-		float x1 = -buttonWidth / 2.0f, x2 = buttonWidth / 2.0f;
-		float y1 = yCenter - buttonHeight / 2.0f, y2 = yCenter + buttonHeight / 2.0f;
-		DrawMenuButton(x1, y1, x2, y2, sel ? colorSelected : colorNormal, sel);
-	}
-}
-
 // Forward declaration — defined later in this file alongside the preview helpers
 static void DrawQuadColor(float cx, float cy, float hw, float hh,
 	float r, float g, float b, float a);
@@ -428,6 +482,52 @@ void RenderBoss()
 	}
 }
 
+// ==========================================
+// RenderPortals — desenha cada portal ativo no vetor global `portals`.
+// Comportamento:
+//   - Se o portal possui textureSRV vinculada, utiliza-se o pixel shader
+//     texturizado via DrawTexturedQuad, respeitando a regiao (x, y, width,
+//     height) da estrutura Portal.
+//   - Caso contrario (fallback de desenvolvimento), desenha-se um quad
+//     solido ciano por meio do pipeline colorido (pixelShaderBlock),
+//     permitindo identificar visualmente portais sem sprite atribuido.
+// ==========================================
+void RenderPortals()
+{
+	for (auto& portal : portals)
+	{
+		if (!portal.active) continue;
+		if (portal.textureSRV)
+		{
+			DrawTexturedQuad(portal.textureSRV,
+				portal.x - portal.width / 2, portal.y,
+				portal.x + portal.width / 2, portal.y + portal.height);
+		}
+		else
+		{
+			// Fallback colorido: ciano, util durante a fase de criacao do estagio.
+			Vertex pVerts[] = {
+				{portal.x - portal.width / 2, portal.y + portal.height, 0.0f},
+				{portal.x - portal.width / 2, portal.y, 0.0f},
+				{portal.x + portal.width / 2, portal.y, 0.0f},
+				{portal.x - portal.width / 2, portal.y + portal.height, 0.0f},
+				{portal.x + portal.width / 2, portal.y, 0.0f},
+				{portal.x + portal.width / 2, portal.y + portal.height, 0.0f}
+			};
+			deviceContext->UpdateSubresource(obstacleBuffer, 0, nullptr, pVerts, 0, 0);
+			XMFLOAT4 pColor(0.0f, 1.0f, 1.0f, 1.0f);
+			deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &pColor, 0, 0);
+			deviceContext->IASetInputLayout(inputLayout);
+			deviceContext->VSSetShader(vertexShader, nullptr, 0);
+			deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0);
+			deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer);
+			UINT s = sizeof(Vertex), o = 0;
+			deviceContext->IASetVertexBuffers(0, 1, &obstacleBuffer, &s, &o);
+			deviceContext->Draw(6, 0);
+		}
+	}
+}
+
 void RenderGameplay() {
 	// Cor de fundo do stage (usa config do editor se disponivel)
 	float clearColor[4] = {
@@ -481,36 +581,7 @@ void RenderGameplay() {
 		}
 	}
 
-	for (auto& portal : portals)
-	{
-		if (!portal.active) continue;
-		if (portal.textureSRV)
-		{
-			DrawTexturedQuad(portal.textureSRV,
-				portal.x - portal.width / 2, portal.y,
-				portal.x + portal.width / 2, portal.y + portal.height);
-		}
-		else
-		{
-			// Padrão se não tiver textura, ciano
-			Vertex pVerts[] = {
-				{portal.x - portal.width / 2, portal.y + portal.height, 0.0f},
-				{portal.x - portal.width / 2, portal.y, 0.0f},
-				{portal.x + portal.width / 2, portal.y, 0.0f},
-				{portal.x - portal.width / 2, portal.y + portal.height, 0.0f},
-				{portal.x + portal.width / 2, portal.y, 0.0f},
-				{portal.x + portal.width / 2, portal.y + portal.height, 0.0f}
-			};
-			deviceContext->UpdateSubresource(obstacleBuffer, 0, nullptr, pVerts, 0, 0);
-			XMFLOAT4 pColor(0.0f, 1.0f, 1.0f, 1.0f);
-			deviceContext->UpdateSubresource(blockColorBuffer, 0, nullptr, &pColor, 0, 0);
-			deviceContext->PSSetShader(pixelShaderBlock, nullptr, 0);
-			deviceContext->PSSetConstantBuffers(0, 1, &blockColorBuffer);
-			UINT s = sizeof(Vertex), o = 0;
-			deviceContext->IASetVertexBuffers(0, 1, &obstacleBuffer, &s, &o);
-			deviceContext->Draw(6, 0);
-		}
-	}
+	RenderPortals();
 
 	// Bola — textura ou cor solida
 	if (editorBallTexture) {
@@ -762,11 +833,16 @@ static float s_demoEDir = 1.0f, s_demoEAngle = 0.0f;
 static int   s_demoShootT = 0;
 static std::vector<EnemyBullet> s_demoBullets;
 static bool  s_demoEInit = false;
+// Rajada do demo (preview do editor) — espelha a logica do gameplay
+// para que o autor veja o padrao se montando aos poucos.
+static BulletBurst s_demoBurst = {};
 
 static float s_demoBX = 0.47f, s_demoBY = 0.5f;
 static int   s_demoBActIdx = 0;
 static float s_demoBTimer = 0.0f;
 static bool  s_demoBInit = false;
+// Estado por familiar para animacao no preview: angulo de orbita atual.
+static float s_demoFamAngles[BOSS_MAX_FAMILIARS] = {};
 
 // --- helpers de desenho ---
 
@@ -813,6 +889,7 @@ static void ResetEnemyDemo()
 	s_demoEX = PREVIEW_CX; s_demoEY = PREVIEW_CY;
 	s_demoEDir = 1.0f; s_demoEAngle = 0.0f;
 	s_demoShootT = 0; s_demoBullets.clear();
+	s_demoBurst = {};
 	s_demoEInit = true;
 }
 
@@ -821,6 +898,7 @@ static void ResetBossDemo()
 	s_demoBX = (editorBossConfig.startX != 0.0f) ? editorBossConfig.startX : PREVIEW_CX;
 	s_demoBY = (editorBossConfig.startY != 0.0f) ? editorBossConfig.startY : 0.5f;
 	s_demoBActIdx = 0; s_demoBTimer = 0.0f;
+	for (int i = 0; i < BOSS_MAX_FAMILIARS; i++) s_demoFamAngles[i] = 0.0f;
 	s_demoBInit = true;
 }
 
@@ -902,35 +980,86 @@ static void RenderPreview_Stage()
 		case PLACED_BOSS:
 			DrawQuadColor(o.x, o.y, editorBossConfig.width / 2.0f, editorBossConfig.height / 2.0f,
 				0.9f, 0.2f, 0.2f, 1.0f); break;
+		case PLACED_PORTAL:
+			DrawQuadColor(o.x, o.y, editorPortalConfig.width / 2.0f, editorPortalConfig.height / 2.0f,
+				0.1f, 0.7f, 0.9f, 1.0f); break;
 		default:
+			// PLACED_BALLSPAWN cai aqui — desenha-se um marcador esferico.
 			DrawBall(o.x, o.y, ballSize, 0.2f, 1.0f, 0.3f); break;
 		}
 	}
 }
 
-static void FireDemoPattern(float ox, float oy)
+// Agenda uma rajada do demo. Para padroes "simultaneos" (leque/radial)
+// emite tudo aqui mesmo; para os demais, queue para emissao gradual.
+static void StartDemoBurst(float ox, float oy)
 {
-	int pat = editorBlockConfig.bulletPattern;
-	int cnt = editorBlockConfig.bulletCount;
-	float spd = (editorBlockConfig.bulletSpeed > 0) ? editorBlockConfig.bulletSpeed : 0.007f;
-	float pi2 = 2.0f * 3.14159265f;
-	float pAngle = atan2f(PREVIEW_CY - oy, (PREVIEW_CX - 0.2f) - ox);
-	for (int i = 0; i < cnt; i++) {
-		float a = pAngle;
-		switch (pat) {
-		case 0: {
-			float sp = 1.0f, sa = pAngle - sp / 2.0f; a = (cnt > 1) ? sa + (sp * i / (cnt - 1)) : pAngle;
-		} break;
-		case 1: spd = 0.005f + i * 0.002f; break;
-		case 2: a = pi2 * i / cnt; break;
-		case 3: a = i * 0.5f; spd = 0.003f + i * 0.0003f; break;
-		case 4: a = pi2 * ((float)rand() / RAND_MAX); break;
-		case 5: a = -1.5708f; break;
-		}
-		EnemyBullet b; b.x = ox; b.y = oy; b.size = 0.012f; b.active = true;
+	s_demoBurst.pattern    = editorBlockConfig.bulletPattern;
+	s_demoBurst.count      = (editorBlockConfig.bulletCount > 0)
+	                         ? editorBlockConfig.bulletCount : 1;
+	s_demoBurst.speed      = (editorBlockConfig.bulletSpeed > 0.0f)
+	                         ? editorBlockConfig.bulletSpeed : 0.007f;
+	s_demoBurst.originX    = ox;
+	s_demoBurst.originY    = oy;
+	s_demoBurst.angle      = atan2f(PREVIEW_CY - oy, (PREVIEW_CX - 0.2f) - ox);
+	s_demoBurst.stepFrames = (editorBlockConfig.burstStepFrames > 0)
+	                         ? editorBlockConfig.burstStepFrames : 4;
+	s_demoBurst.idx        = 0;
+
+	auto pushBullet = [](float bx, float by, float a, float spd) {
+		EnemyBullet b; b.x = bx; b.y = by; b.size = 0.012f; b.active = true;
 		b.vx = cosf(a) * spd; b.vy = sinf(a) * spd;
 		s_demoBullets.push_back(b);
+	};
+
+	if (s_demoBurst.pattern == 0 || s_demoBurst.pattern == 2) {
+		const float pi2 = 2.0f * 3.14159265f;
+		for (int i = 0; i < s_demoBurst.count; i++) {
+			float a;
+			if (s_demoBurst.pattern == 0) {
+				float sp = 1.0f;
+				a = (s_demoBurst.count > 1)
+				    ? (s_demoBurst.angle - sp / 2.0f + sp * i / (s_demoBurst.count - 1))
+				    : s_demoBurst.angle;
+			} else {
+				a = pi2 * i / (float)s_demoBurst.count;
+			}
+			pushBullet(ox, oy, a, s_demoBurst.speed);
+		}
+		s_demoBurst.shotsRemaining = 0;
+		return;
 	}
+
+	s_demoBurst.shotsRemaining = s_demoBurst.count;
+	s_demoBurst.subTimer       = s_demoBurst.stepFrames;
+}
+
+static void TickDemoBurst()
+{
+	if (s_demoBurst.shotsRemaining <= 0) return;
+	s_demoBurst.subTimer++;
+	if (s_demoBurst.subTimer < s_demoBurst.stepFrames) return;
+	s_demoBurst.subTimer = 0;
+
+	const int   i      = s_demoBurst.idx;
+	const float pAngle = s_demoBurst.angle;
+	float       spd    = s_demoBurst.speed;
+	float       a      = pAngle;
+	const float pi2    = 2.0f * 3.14159265f;
+
+	switch (s_demoBurst.pattern) {
+	case 1: spd = 0.005f + i * 0.002f; break;
+	case 3: a = i * 0.5f; spd = 0.003f + i * 0.0003f; break;
+	case 4: a = pi2 * ((float)rand() / RAND_MAX); break;
+	case 5: a = -1.5708f; break;
+	default: break;
+	}
+	EnemyBullet b; b.x = s_demoBurst.originX; b.y = s_demoBurst.originY;
+	b.size = 0.012f; b.active = true;
+	b.vx = cosf(a) * spd; b.vy = sinf(a) * spd;
+	s_demoBullets.push_back(b);
+	s_demoBurst.idx++;
+	s_demoBurst.shotsRemaining--;
 }
 
 static void RenderPreview_Enemy()
@@ -957,10 +1086,18 @@ static void RenderPreview_Enemy()
 			break;
 		default: s_demoEX = PREVIEW_CX; s_demoEY = PREVIEW_CY; break;
 		}
-		// Tiro
+		// Tiro: agenda nova rajada quando a anterior termina e o
+		// intervalo periodico expira. TickDemoBurst emite um tiro por
+		// frame para padroes sequenciais; leque/radial sai todo em
+		// StartDemoBurst. Origem do tiro acompanha a posicao corrente
+		// do inimigo (importante para padroes em movimento — espiral
+		// num inimigo circular nao deixa tiros para tras).
+		s_demoBurst.originX = s_demoEX;
+		s_demoBurst.originY = s_demoEY;
+		TickDemoBurst();
 		int interval = (editorBlockConfig.shootIntervalFrames > 0) ? editorBlockConfig.shootIntervalFrames : 90;
-		if (++s_demoShootT >= interval) {
-			s_demoShootT = 0; FireDemoPattern(s_demoEX, s_demoEY);
+		if (s_demoBurst.shotsRemaining <= 0 && ++s_demoShootT >= interval) {
+			s_demoShootT = 0; StartDemoBurst(s_demoEX, s_demoEY);
 		}
 		// Atualiza balas
 		for (auto& bl : s_demoBullets) {
@@ -986,9 +1123,13 @@ static void RenderPreview_Boss()
 	float hw = (editorBossConfig.width > 0) ? editorBossConfig.width / 2.0f : 0.1f;
 	float hh = (editorBossConfig.height > 0) ? editorBossConfig.height / 2.0f : 0.1f;
 
-	// Use configured start position (or center as fallback)
-	float startCX = (editorBossConfig.startX != 0.0f) ? editorBossConfig.startX : PREVIEW_CX;
-	float startCY = (editorBossConfig.startY != 0.0f) ? editorBossConfig.startY : 0.5f;
+	// Posicao inicial em NDC do stage (-1..1). O fallback antigo usava
+	// PREVIEW_CX (0.47), que escondia o boss da metade esquerda do stage
+	// quando o painel era colapsado para edicao em tela cheia. Como o
+	// BossConfig zerado coincide com o centro da tela, este e' um default
+	// visivel e tambem consistente com a posicao real em gameplay.
+	float startCX = editorBossConfig.startX;
+	float startCY = editorBossConfig.startY;
 	float cx = startCX, cy = startCY;
 
 	// Determine current HP phase for drawing targets
@@ -1008,11 +1149,15 @@ static void RenderPreview_Boss()
 				switch (act.type) {
 				case BOSS_ACT_MOVE_TO: {
 					float dx = act.targetX - s_demoBX, dy = act.targetY - s_demoBY, len = sqrtf(dx * dx + dy * dy);
-					if (len < 0.01f) {
+					float sp = (act.speed > 0) ? act.speed : 0.01f;
+					// Snap-to-target: evita o flicker visto no runtime
+					// (oscilacao quando sp ultrapassa a distancia restante).
+					if (len <= sp || len < 0.005f) {
+						s_demoBX = act.targetX; s_demoBY = act.targetY;
 						s_demoBActIdx++; s_demoBTimer = 0;
 					}
 					else {
-						float sp = (act.speed > 0) ? act.speed : 0.01f; s_demoBX += (dx / len) * sp; s_demoBY += (dy / len) * sp;
+						s_demoBX += (dx / len) * sp; s_demoBY += (dy / len) * sp;
 					}
 					break;
 				}
@@ -1061,12 +1206,78 @@ static void RenderPreview_Boss()
 	else
 		DrawQuadColor(cx, cy, hw, hh, 0.9f, 0.2f, 0.2f, 1.0f);
 
-	// Barra de HP (topo da area de preview)
-	float barW = 0.35f, barFill = editorDemoBossHPPct * barW;
-	float barY = PREV_T - 0.08f, barCX = PREV_L + 0.05f + barW / 2.0f;
-	DrawQuadColor(barCX, barY, barW / 2.0f, 0.025f, 0.3f, 0.3f, 0.3f, 1.0f);
+	// Familiares (BOSS_ARCH_STATIC_FAMILIARS) — desenha a orbita pontilhada
+	// + o familiar sobre o ponto atual da orbita. Sem demo ativo, posiciona
+	// no angulo inicial (angle=0). Com demo, o angulo avanca conforme
+	// fam.orbitSpeed (mesma logica de gameplay).
+	if (editorBossConfig.archetype == BOSS_ARCH_STATIC_FAMILIARS) {
+		for (int i = 0; i < editorBossConfig.familiarCount && i < BOSS_MAX_FAMILIARS; i++) {
+			const FamiliarConfig& fam = editorBossConfig.familiars[i];
+			if (editorDemoActive) s_demoFamAngles[i] += fam.orbitSpeed;
+			const float ang   = s_demoFamAngles[i];
+			const float ocx   = cx + fam.relOffsetX;
+			const float ocy   = cy + fam.relOffsetY;
+			const float fx    = ocx + cosf(ang) * fam.orbitRadius;
+			const float fy    = ocy + sinf(ang) * fam.orbitRadius;
+
+			// Orbita: 24 pontos ao redor do centro relativo do familiar.
+			const int   kOrbitDots = 24;
+			for (int k = 0; k < kOrbitDots; k++) {
+				float a = (2.0f * 3.14159265f * k) / kOrbitDots;
+				float dx = ocx + cosf(a) * fam.orbitRadius;
+				float dy = ocy + sinf(a) * fam.orbitRadius;
+				DrawQuadColor(dx, dy, 0.004f, 0.004f, 0.5f, 0.5f, 0.7f, 0.45f);
+			}
+
+			// Familiar (quad laranja sem textura — sprite nao e' carregado
+			// no editor, mas a posicao/orbita ja' fica visivel).
+			DrawQuadColor(fx, fy, 0.022f, 0.022f, 0.95f, 0.6f, 0.15f, 1.0f);
+			// Borda branca para destacar
+			DrawQuadColor(fx, fy + 0.022f, 0.022f, 0.003f, 1.0f, 1.0f, 1.0f, 0.7f);
+			DrawQuadColor(fx, fy - 0.022f, 0.022f, 0.003f, 1.0f, 1.0f, 1.0f, 0.7f);
+		}
+	}
+
+	// Multipart nodes — desenha cada node na sua posicao inicial configurada,
+	// para que o autor possa visualizar a montagem do boss multipartido.
+	if (editorBossConfig.archetype == BOSS_ARCH_MULTIPART) {
+		for (int i = 0; i < editorBossConfig.nodeCount && i < BOSS_MAX_NODES; i++) {
+			const MultipartNode& n = editorBossConfig.nodes[i];
+			DrawQuadColor(n.startX, n.startY, hw * 0.6f, hh * 0.6f, 0.7f, 0.3f, 0.9f, 0.95f);
+			DrawQuadColor(n.startX, n.startY + hh * 0.6f, hw * 0.6f, 0.003f, 1.0f, 1.0f, 1.0f, 0.6f);
+			DrawQuadColor(n.startX, n.startY - hh * 0.6f, hw * 0.6f, 0.003f, 1.0f, 1.0f, 1.0f, 0.6f);
+		}
+	}
+
+	// Barra de HP no topo do stage (NDC). Posicionada perto da borda
+	// superior central para nao colidir com a area de movimentacao.
+	float barW = 0.5f, barFill = editorDemoBossHPPct * barW;
+	float barY = 0.92f, barLeft = -barW * 0.5f;
+	DrawQuadColor(0.0f, barY, barW * 0.5f, 0.025f, 0.3f, 0.3f, 0.3f, 1.0f);
 	if (barFill > 0)
-		DrawQuadColor(PREV_L + 0.05f + barFill / 2.0f, barY, barFill / 2.0f, 0.022f, 0.8f, 0.15f, 0.15f, 1.0f);
+		DrawQuadColor(barLeft + barFill * 0.5f, barY, barFill * 0.5f, 0.022f, 0.8f, 0.15f, 0.15f, 1.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Preview do Portal: desenha o sprite (ou retangulo ciano de fallback)
+// centralizado na area de preview, com as dimensoes do editorPortalConfig.
+// ---------------------------------------------------------------------------
+static void RenderPreview_Portal()
+{
+	float hw = (editorPortalConfig.width  > 0.0f) ? editorPortalConfig.width  * 0.5f : 0.05f;
+	float hh = (editorPortalConfig.height > 0.0f) ? editorPortalConfig.height * 0.5f : 0.075f;
+
+	if (editorPortalTexture) {
+		DrawQuadTexCentered(editorPortalTexture, PREVIEW_CX, PREVIEW_CY, hw, hh);
+	} else {
+		// Sem sprite: retangulo ciano semitransparente com borda, para que
+		// o autor visualize a hitbox/area mesmo sem textura definida.
+		DrawQuadColor(PREVIEW_CX, PREVIEW_CY, hw, hh, 0.1f, 0.7f, 0.9f, 0.85f);
+		DrawQuadColor(PREVIEW_CX, PREVIEW_CY + hh - 0.003f, hw, 0.003f, 1.0f, 1.0f, 1.0f, 0.6f);
+		DrawQuadColor(PREVIEW_CX, PREVIEW_CY - hh + 0.003f, hw, 0.003f, 1.0f, 1.0f, 1.0f, 0.6f);
+		DrawQuadColor(PREVIEW_CX - hw + 0.003f, PREVIEW_CY, 0.003f, hh, 1.0f, 1.0f, 1.0f, 0.6f);
+		DrawQuadColor(PREVIEW_CX + hw - 0.003f, PREVIEW_CY, 0.003f, hh, 1.0f, 1.0f, 1.0f, 0.6f);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1077,9 +1288,9 @@ void RenderEditor()
 	float clearColor[4] = { 0.08f, 0.08f, 0.12f, 1.0f };
 	deviceContext->ClearRenderTargetView(renderTargetView, clearColor);
 
-	// Linha divisoria (borda direita do painel ImGui) — nao desenhar no Stage (fullscreen)
-	if (currentEditorMode != EDITOR_MODE_STAGE)
-		DrawQuadColor(-0.05f, 0.0f, 0.003f, 1.0f, 0.25f, 0.25f, 0.30f, 1.0f);
+	// Sem linha divisoria fixa: no modo multi-window cada painel ImGui
+	// flutua livremente, entao nao existe mais uma "borda direita do
+	// painel" estavel para marcar.
 
 	switch (currentEditorMode) {
 	case EDITOR_MODE_PLAYER:   RenderPreview_Player();   break;
@@ -1089,6 +1300,7 @@ void RenderEditor()
 	case EDITOR_MODE_ENEMY:    RenderPreview_Enemy();    break;
 	case EDITOR_MODE_BOSS:     RenderPreview_Boss();     break;
 	case EDITOR_MODE_MENU:     RenderMenu();             break;
+	case EDITOR_MODE_PORTAL:   RenderPreview_Portal();   break;
 	}
 }
 
@@ -1098,27 +1310,134 @@ void RenderEditor()
 // ==========================================
 void RenderDebugUI()
 {
+	// Mantido como wrapper para compatibilidade — o overlay de gameplay
+	// agora e' uma HUD propria (RenderGameplayHUD), nao um debug widget.
+	RenderGameplayHUD();
+}
+
+// ==========================================
+// HUD DO GAMEPLAY - overlay ImGui exibido durante STATE_GAMEPLAY.
+// ----------------------------------------------------------------------
+// Substitui as antigas chamadas DrawScore/DrawLives/DrawStage via GDI,
+// que pintavam direto no HDC do hwnd e sumiam a cada Present (flicker).
+// Funciona em build editor e em build standalone (g_isEditorEnabled=false).
+//
+// Layout:
+//   [VIDAS x N]                    [STAGE N]                   [SCORE 1234]
+//                                  [HP do boss, quando ativo]   [COMBO xN]
+//   ...
+//   [Blocos: N]  (canto inferior esquerdo, somente fora de boss)
+//
+// As janelas usam NoBackground + NoInputs + NoNav para nao roubar foco
+// do jogo. Posicionamento absoluto em pixels evita problemas de layout
+// quando a janela e' redimensionada.
+// ==========================================
+void RenderGameplayHUD()
+{
 	ImGui_ImplDX11_NewFrame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();
 
-	// Janela minimalista no canto inferior direito, sem foco
 	ImGuiIO& io = ImGui::GetIO();
-	ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 160.0f, io.DisplaySize.y - 80.0f));
-	ImGui::SetNextWindowSize(ImVec2(155.0f, 75.0f));
-	ImGui::SetNextWindowBgAlpha(0.45f);
-	ImGui::Begin("##dbg", nullptr,
+	const ImGuiWindowFlags flags =
 		ImGuiWindowFlags_NoDecoration |
 		ImGuiWindowFlags_NoInputs |
 		ImGuiWindowFlags_NoNav |
-		ImGuiWindowFlags_NoMove);
+		ImGuiWindowFlags_NoMove |
+		ImGuiWindowFlags_NoSavedSettings |
+		ImGuiWindowFlags_NoBackground |
+		ImGuiWindowFlags_AlwaysAutoResize;
 
-	ImGui::Text("Score : %d", score);
-	ImGui::Text("Vidas  : %d", life);
-	ImGui::Text("Stage  : %d", stage);
-	ImGui::Text("Blocos : %d", blocksRemaining);
-
+	// --- Vidas (topo esquerdo) ---
+	ImGui::SetNextWindowPos(ImVec2(12.0f, 8.0f));
+	ImGui::Begin("##hud_lives", nullptr, flags);
+	ImGui::SetWindowFontScale(1.35f);
+	ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 90, 90, 255));
+	ImGui::Text("VIDAS x %d", (life > 0) ? life : 0);
+	ImGui::PopStyleColor();
 	ImGui::End();
+
+	// --- Stage (topo centro) ---
+	{
+		char buf[32]; sprintf_s(buf, "STAGE %d", stage + 1);
+		ImVec2 textSz = ImGui::CalcTextSize(buf);
+		float scale   = 1.2f;
+		float winW    = textSz.x * scale + 24.0f;
+		ImGui::SetNextWindowPos(ImVec2((io.DisplaySize.x - winW) * 0.5f, 8.0f));
+		ImGui::Begin("##hud_stage", nullptr, flags);
+		ImGui::SetWindowFontScale(scale);
+		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(230, 230, 230, 255));
+		ImGui::TextUnformatted(buf);
+		ImGui::PopStyleColor();
+		ImGui::End();
+	}
+
+	// --- Score + Combo (topo direito) ---
+	{
+		char buf[64]; sprintf_s(buf, "SCORE %d", score);
+		ImVec2 textSz = ImGui::CalcTextSize(buf);
+		float scale   = 1.45f;
+		float winW    = textSz.x * scale + 24.0f;
+		ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - winW - 8.0f, 8.0f));
+		ImGui::Begin("##hud_score", nullptr, flags);
+		ImGui::SetWindowFontScale(scale);
+		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 220, 90, 255));
+		ImGui::TextUnformatted(buf);
+		ImGui::PopStyleColor();
+		if (combo > 1) {
+			ImGui::SetWindowFontScale(scale * 0.7f);
+			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 150, 60, 255));
+			ImGui::Text("COMBO x%d", combo);
+			ImGui::PopStyleColor();
+		}
+		ImGui::End();
+	}
+
+	// --- Boss HP (topo centro, abaixo do STAGE) ---
+	if (currentStageMode == STAGE_BOSS && g_boss.active) {
+		const float barW = 380.0f, barH = 14.0f;
+		const float winW = barW + 16.0f;
+		const float winX = (io.DisplaySize.x - winW) * 0.5f;
+		const float winY = 42.0f;
+		ImGui::SetNextWindowPos(ImVec2(winX, winY));
+		ImGui::SetNextWindowSize(ImVec2(winW, 0.0f));
+		ImGui::Begin("##hud_boss", nullptr,
+			ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+			ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove |
+			ImGuiWindowFlags_NoSavedSettings);
+		if (g_boss.config.name[0]) {
+			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 110, 110, 255));
+			ImGui::TextUnformatted(g_boss.config.name);
+			ImGui::PopStyleColor();
+		}
+		float frac = (g_boss.config.maxHP > 0)
+			? (float)g_boss.hp / (float)g_boss.config.maxHP : 0.0f;
+		if (frac < 0.0f) frac = 0.0f;
+		if (frac > 1.0f) frac = 1.0f;
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		ImVec2 p = ImGui::GetCursorScreenPos();
+		dl->AddRectFilled(p, ImVec2(p.x + barW, p.y + barH), IM_COL32(40, 40, 40, 230));
+		if (frac > 0.0f) {
+			ImU32 col = (frac > 0.5f) ? IM_COL32(220, 50, 50, 255)
+			                          : IM_COL32(240, 130, 30, 255);
+			dl->AddRectFilled(p, ImVec2(p.x + barW * frac, p.y + barH), col);
+		}
+		dl->AddRect(p, ImVec2(p.x + barW, p.y + barH), IM_COL32(255, 255, 255, 180));
+		ImGui::Dummy(ImVec2(barW, barH));
+		ImGui::End();
+	}
+
+	// --- Blocos restantes (canto inferior esquerdo, somente stages normais) ---
+	if (currentStageMode != STAGE_BOSS) {
+		char buf[32]; sprintf_s(buf, "Blocos: %d", blocksRemaining);
+		ImGui::SetNextWindowPos(ImVec2(12.0f, io.DisplaySize.y - 32.0f));
+		ImGui::Begin("##hud_blocks", nullptr, flags);
+		ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(190, 190, 190, 220));
+		ImGui::TextUnformatted(buf);
+		ImGui::PopStyleColor();
+		ImGui::End();
+	}
+
 	ImGui::Render();
 	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }

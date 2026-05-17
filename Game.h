@@ -5,7 +5,6 @@ void ActivateDash();
 void ActivateforceField();
 void SpawnEnemyBulletAngle(float startX, float startY, float angleRadian, float speed);
 void InitGameplay(int selectedDifficulty, int selectedLives);
-void UpdateDiffSelect();
 void UpdateIFrame();
 void UpdateMenu();
 void UpdateOptions();

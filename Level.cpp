@@ -23,16 +23,27 @@ static ID3D11ShaderResourceView* CacheLoadTexture(const char* path) {
 }
 bool LoadMenuConfig(const char* fullPath);
 bool LoadBossConfig(const char* fullPath);
+bool LoadPortalConfig(const char* fullPath);
 
 void ClearLevel()
 {
+	// Limpa todas as colecoes de entidades runtime. As SRVs referenciadas
+	// (textureSRV em Block, Obstacle, Portal) pertencem ao s_textureCache
+	// e nao sao liberadas aqui: o cache mantem a propriedade ate o shutdown
+	// (ClearTextureCache em CleanD3D). Apenas as visualizacoes runtime sao
+	// descartadas, preservando a possibilidade de recarregamento eficiente.
 	blocks.clear();
 	obstacles.clear();
 	projectiles.clear();
 	enemyBullets.clear();
 	droppedItems.clear();
+	portals.clear();
 	blocksRemaining = 0;
 	blocksInitialCount = 0;
+	// Reset de estado de transito do portal e timers correlatos.
+	ballInTransit = false;
+	portalTimer = 0;
+	portalCooldown = 0;
 }
 
 // Cria um bloco a partir de um BlockConfig carregado do editor
@@ -51,6 +62,9 @@ void AddBlockFromConfig(float x, float y, const BlockConfig& cfg, ID3D11ShaderRe
 	b.bulletSpeed = cfg.bulletSpeed;
 	b.shootIntervalFrames = cfg.shootIntervalFrames;
 	b.shootTimer = 0;
+	// Inicializa rajada vazia; stepFrames vem do template (default 4).
+	b.burst = {};
+	b.burst.stepFrames = (cfg.burstStepFrames > 0) ? cfg.burstStepFrames : 4;
 	b.invulnerable = cfg.invulnerable;
 	b.useTexture = cfg.useTexture;
 	b.textureSRV = srv;
@@ -83,6 +97,7 @@ void AddBlocks(float x, float y, float width, float height, int hits, int patter
 	b.textureSRV = nullptr;
 	b.colorR = 0.4f; b.colorG = 0.4f; b.colorB = 0.8f; b.colorA = 1.0f;
 	b.movType = MOV_NONE; b.movDir = 1.0f;
+	b.burst.stepFrames = 4;
 	blocks.push_back(b);
 }
 
@@ -180,6 +195,7 @@ void LoadLevel(const char* filename)
 			b.dropWeights[0] = dw0; b.dropWeights[1] = dw1;
 			b.dropWeights[2] = dw2; b.dropWeights[3] = dw3;
 			b.colorR = 0.4f; b.colorG = 0.4f; b.colorB = 0.8f; b.colorA = 1.0f;
+			b.burst.stepFrames = 4;
 			blocks.push_back(b);
 		}
 		else if (type == 'O') {
@@ -322,6 +338,7 @@ static bool LoadBlockConfigFromFile(const char* path, BlockConfig& cfg)
 		if (line.find("\"bulletCount\"") != std::string::npos) sscanf_s(line.c_str(), " \"bulletCount\": %d,", &cfg.bulletCount);
 		if (line.find("\"bulletSpeed\"") != std::string::npos) sscanf_s(line.c_str(), " \"bulletSpeed\": %f,", &cfg.bulletSpeed);
 		if (line.find("\"shootInterval\"") != std::string::npos) sscanf_s(line.c_str(), " \"shootInterval\": %d,", &cfg.shootIntervalFrames);
+		if (line.find("\"burstStep\"") != std::string::npos) sscanf_s(line.c_str(), " \"burstStep\": %d,", &cfg.burstStepFrames);
 		if (line.find("\"invulnerable\": true") != std::string::npos) cfg.invulnerable = true;
 		if (line.find("\"invulnerable\": false") != std::string::npos) cfg.invulnerable = false;
 		if (line.find("\"useTexture\": true") != std::string::npos) cfg.useTexture = true;
@@ -443,6 +460,28 @@ void PopulateGameplayFromStageObjects()
 		else if (o.type == PLACED_BALLSPAWN) {
 			editorStageConfig.ballStartX = o.x;
 			editorStageConfig.ballStartY = o.y;
+		}
+		else if (o.type == PLACED_PORTAL) {
+			// Instancia o portal no vetor runtime `portals`. O campo
+			// `configFile` do PlacedObject aponta para o JSON de configuracao
+			// produzido pela aba "Portal" do editor; LoadPortalConfig preenche
+			// editorPortalConfig (sprite, largura, altura) e estes valores sao
+			// copiados para o Portal runtime.
+			if (o.configFile[0] != '\0')
+				LoadPortalConfig(o.configFile);
+
+			Portal p = {};
+			p.x = o.x;
+			p.y = o.y;
+			p.width  = (editorPortalConfig.width  > 0.0f) ? editorPortalConfig.width  : 0.10f;
+			p.height = (editorPortalConfig.height > 0.0f) ? editorPortalConfig.height : 0.15f;
+			p.active = true;
+			strncpy_s(p.spritePath, sizeof(p.spritePath),
+				editorPortalConfig.spritePath, _TRUNCATE);
+			if (p.spritePath[0] != '\0') {
+				p.textureSRV = CacheLoadTexture(p.spritePath);
+			}
+			portals.push_back(p);
 		}
 	}
 }

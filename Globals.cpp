@@ -51,6 +51,7 @@ ID3D11ShaderResourceView* editorPlayerRunLeftTexture   = nullptr;
 ID3D11ShaderResourceView* editorPlayerDashRightTexture = nullptr;
 ID3D11ShaderResourceView* editorPlayerDashLeftTexture  = nullptr;
 ID3D11ShaderResourceView* editorProjectileTexture = nullptr;
+ID3D11ShaderResourceView* editorPortalTexture = nullptr;
 ID3D11InputLayout* inputLayoutTextured = nullptr;
 ID3D11BlendState* alphaBlendState = nullptr;
 
@@ -144,7 +145,7 @@ std::vector<DroppedItem> droppedItems;
 std::vector<Portal> portals;
 
 // ==========================================
-// CONFIGS DO EDITOR � defaults
+// CONFIGS DO EDITOR - defaults
 // ==========================================
 
 ObstacleConfig editorObstacleConfig = {
@@ -158,7 +159,7 @@ char editorObstacleWidthInput[32] = "0.3";
 char editorObstacleHeightInput[32] = "0.02";
 char editorObstacleTexturePathInput[256] = "";
 
-// Boss � inicializado com zeros; campos preenchidos no editor
+// Boss - inicializado com zeros; campos preenchidos no editor
 BossConfig editorBossConfig = {};
 
 // Block/Enemy template
@@ -169,6 +170,7 @@ BlockConfig editorBlockConfig = {
 	false,              // useTexture
 	1,                  // maxHits
 	0, 1, 0.006f, 60,   // bulletPattern, count, speed, interval
+	4,                  // burstStepFrames (intervalo entre tiros da rajada)
 	false,              // invulnerable
 	MOV_NONE, 0.0f, 0.3f, 0.2f, // movType, speed, amplitude, radius
 	{ true, { true, false, false, false }, { 1.0f, 0.0f, 0.0f, 0.0f } }
@@ -189,7 +191,13 @@ MenuConfig editorMenuConfig = {
 	0.30f, 0.30f, 0.80f, 1.0f,
 	1.00f, 1.00f, 0.30f, 1.0f,
 	"", "", "",
-	0.0f, 0.75f, 0.8f, 0.15f
+	0.0f, 0.75f, 0.8f, 0.15f,
+	// Texto dos botoes — defaults equivalentes ao que era hardcoded em
+	// RenderMenuTextOverlay (cinza claro normal, amarelo selecionado).
+	0.94f, 0.94f, 0.94f, 1.0f,
+	1.00f, 0.90f, 0.35f, 1.0f,
+	24.0f,
+	""
 };
 
 // Stage start (retro-compatibilidade)
@@ -202,6 +210,13 @@ StageEditorConfig editorStageEditorConfig = {
 	false, ""
 };
 
+// Portal — defaults do editor
+PortalConfig editorPortalConfig = {
+	0.10f,   // width
+	0.15f,   // height
+	""       // spritePath
+};
+
 // Objetos posicionados no stage editor
 std::vector<PlacedObject> stageObjects;
 // Projeto
@@ -212,3 +227,7 @@ char              gameProjectPath[MAX_PATH] = "game_config.json";
 // Preview e demo
 bool  editorDemoActive = false;
 float editorDemoBossHPPct = 1.0f;
+
+// Modo standalone: true habilita editor (tecla E + ImGui de debug);
+// false executa apenas o jogo, como executavel final distribuivel.
+bool g_isEditorEnabled = true;

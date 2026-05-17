@@ -72,6 +72,21 @@ struct DroppedItem {
 	bool  active;
 };
 
+// Rajada (burst) de tiros. Em vez de spawnar todos os projeteis de um
+// padrao no mesmo frame (visualmente "instantaneo"), a rajada emite um
+// tiro a cada `stepFrames` frames preservando a forma do padrao.
+struct BulletBurst {
+	int   shotsRemaining;  // tiros que ainda falta emitir
+	int   idx;             // indice do proximo tiro (0..count-1)
+	int   subTimer;        // frames desde o ultimo tiro da rajada
+	int   stepFrames;      // intervalo (frames) entre tiros consecutivos
+	int   pattern;         // padrao do tiro (0..5)
+	int   count;           // total de tiros da rajada
+	float speed;           // velocidade base
+	float angle;           // angulo de referencia capturado no inicio
+	float originX, originY;
+};
+
 struct Block {
 	float x, y, width, height;
 	bool  active;
@@ -82,6 +97,9 @@ struct Block {
 	float bulletSpeed;
 	int   shootIntervalFrames;
 	int   shootTimer;
+	// Rajada (spawn gradual). Inicializada zero em todos os blocks
+	// criados; default de stepFrames vem do BlockConfig (ou 4 frames).
+	BulletBurst burst;
 	// Invulnerabilidade
 	bool  invulnerable;
 	// iFrame pos-hit
@@ -165,6 +183,7 @@ struct BlockConfig {
 	int   bulletCount;
 	float bulletSpeed;
 	int   shootIntervalFrames;
+	int   burstStepFrames;       // intervalo (frames) entre tiros da mesma rajada
 	bool  invulnerable;
 	EnemyMovType movType;
 	float movSpeed;
@@ -281,6 +300,10 @@ struct BossState {
 	bool   nodeActive[BOSS_MAX_NODES];
 	int    nodeActionIdx[BOSS_MAX_NODES];
 	float  nodeActionTimer[BOSS_MAX_NODES];
+	// Spawn gradual (uma rajada principal + uma por familiar/node)
+	BulletBurst burst;
+	BulletBurst familiarBursts[BOSS_MAX_FAMILIARS];
+	BulletBurst nodeBursts[BOSS_MAX_NODES];
 };
 
 // ==========================================
@@ -312,6 +335,14 @@ struct MenuConfig {
 	char  selectorTexturePath[256];
 	float logoX, logoY;
 	float logoWidth, logoHeight;
+
+	// Tipografia do texto dos botoes do menu principal (RenderMenuTextOverlay).
+	// fontPath aceita um caminho para um arquivo TrueType (.ttf); vazio usa
+	// a fonte default do ImGui.
+	float textColorR, textColorG, textColorB, textColorA;
+	float textSelectedColorR, textSelectedColorG, textSelectedColorB, textSelectedColorA;
+	float textSize;          // em pixels
+	char  fontPath[256];
 };
 
 // ==========================================
@@ -322,7 +353,7 @@ enum StageMode {
 	STAGE_NORMAL = 0, STAGE_BOSS = 1
 };
 enum PlacedObjectType {
-	PLACED_BLOCK = 0, PLACED_OBSTACLE = 1, PLACED_BOSS = 2, PLACED_BALLSPAWN = 3
+	PLACED_BLOCK = 0, PLACED_OBSTACLE = 1, PLACED_BOSS = 2, PLACED_BALLSPAWN = 3, PLACED_PORTAL = 4
 };
 
 struct PlacedObject {
@@ -344,7 +375,15 @@ struct Portal
 {
 	float x, y, width, height;
 	bool active;
+	char spritePath[256] = {};
 	ID3D11ShaderResourceView* textureSRV = nullptr;
+};
+
+// Configuracao default do editor para portais (largura/altura/sprite)
+struct PortalConfig {
+	float width;
+	float height;
+	char  spritePath[256];
 };
 
 struct StageStartConfig {
@@ -423,6 +462,7 @@ extern ID3D11ShaderResourceView* editorPlayerRunLeftTexture;
 extern ID3D11ShaderResourceView* editorPlayerDashRightTexture;
 extern ID3D11ShaderResourceView* editorPlayerDashLeftTexture;
 extern ID3D11ShaderResourceView* editorProjectileTexture;
+extern ID3D11ShaderResourceView* editorPortalTexture;     // preview do portal
 extern ID3D11InputLayout* inputLayoutTextured;
 extern ID3D11BlendState* alphaBlendState;
 
@@ -513,6 +553,7 @@ extern BallSpriteConfig    editorBallConfig;
 extern MenuConfig          editorMenuConfig;
 extern StageStartConfig    editorStageConfig;
 extern StageEditorConfig   editorStageEditorConfig;
+extern PortalConfig        editorPortalConfig;
 
 // Portal
 extern std::unique_ptr<DirectX::SpriteBatch> spriteBatch;
@@ -528,3 +569,7 @@ extern char              gameProjectPath[MAX_PATH]; // path do game_config.json 
 // Preview e demo do editor
 extern bool  editorDemoActive;      // toggle de demonstracao (inimigos, boss)
 extern float editorDemoBossHPPct;   // slider de HP simulado para o boss
+
+// Modo standalone (executavel final, sem editor)
+// Quando false, suprime-se a UI ImGui de gameplay e ignora-se o toggle E.
+extern bool g_isEditorEnabled;

@@ -227,6 +227,7 @@ char              gameProjectPath[MAX_PATH] = "game_config.json";
 // Preview e demo
 bool  editorDemoActive = false;
 float editorDemoBossHPPct = 1.0f;
+bool  g_editorStageDemoActive = false;
 
 // Modo standalone: true habilita editor (tecla E + ImGui de debug);
 // false executa apenas o jogo, como executavel final distribuivel.

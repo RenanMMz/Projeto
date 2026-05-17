@@ -362,6 +362,15 @@ struct PlacedObject {
 	char  configFile[256];
 	char  displayName[64];
 	bool  selected;
+	// Metadados de preview resolvidos a partir do JSON do configFile.
+	// previewSRV: textura (nao-owned; ciclo de vida no s_textureCache).
+	// previewW/H: dimensoes reais do objeto, para que o preview do editor
+	//             desenhe com o mesmo tamanho do gameplay (em vez do template
+	//             global editorBlockConfig/Obstacle/etc.). Valor <= 0 indica
+	//             "nao resolvido — usar fallback do template".
+	ID3D11ShaderResourceView* previewSRV = nullptr;
+	float previewW = -1.0f;
+	float previewH = -1.0f;
 };
 
 struct StageEditorConfig {
@@ -569,6 +578,7 @@ extern char              gameProjectPath[MAX_PATH]; // path do game_config.json 
 // Preview e demo do editor
 extern bool  editorDemoActive;      // toggle de demonstracao (inimigos, boss)
 extern float editorDemoBossHPPct;   // slider de HP simulado para o boss
+extern bool  g_editorStageDemoActive; // toggle de demo na aba Stage (movimentos+disparos)
 
 // Modo standalone (executavel final, sem editor)
 // Quando false, suprime-se a UI ImGui de gameplay e ignora-se o toggle E.

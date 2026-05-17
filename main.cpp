@@ -154,10 +154,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
 			if (elapsedSeconds >= targetSecondsPerFrame) {
 				lastTime = currentTime;
 
-				// Toggle do editor pela tecla E — somente quando habilitado.
+				// Toggle do editor pela tecla E. Restricoes:
+				//  1) g_isEditorEnabled — desabilita o atalho em modo standalone.
+				//  2) GetForegroundWindow() == g_hWnd — GetAsyncKeyState e' global;
+				//     sem essa guarda, digitar E em qualquer outro app ativaria
+				//     o editor.
+				//  3) !io.WantCaptureKeyboard — se um InputText do ImGui esta'
+				//     ativo, o E faz parte do nome digitado e nao deve atuar
+				//     como atalho.
 				if (g_isEditorEnabled) {
+					const bool hasFocus     = (GetForegroundWindow() == g_hWnd);
+					const bool imguiWantsKb = ImGui::GetIO().WantCaptureKeyboard;
 					static bool eWasPressed = false;
-					bool ePressed = (GetAsyncKeyState('E') & 0x8000) != 0;
+					bool ePressed = hasFocus && !imguiWantsKb &&
+						((GetAsyncKeyState('E') & 0x8000) != 0);
 					if (ePressed && !eWasPressed) {
 						if (currentState == GameState::STATE_EDITOR)
 							currentState = GameState::STATE_START_MENU;

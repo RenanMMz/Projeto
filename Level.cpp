@@ -21,6 +21,64 @@ static ID3D11ShaderResourceView* CacheLoadTexture(const char* path) {
 	s_textureCache[path] = srv;
 	return srv;
 }
+
+// Wrapper publico para consumo externo (preview no editor).
+ID3D11ShaderResourceView* GetCachedTexture(const char* path) {
+	return CacheLoadTexture(path);
+}
+
+// Le um JSON de configuracao e extrai, em uma unica passagem:
+//   - "texturePath" -> outTex
+//   - "width"  -> *outW
+//   - "height" -> *outH
+// Cada parametro e' opcional; campos ausentes mantem o valor inicial do
+// chamador. Retorna true se conseguiu abrir o arquivo (mesmo que vazio).
+static bool ReadPreviewMetaFromJSON(const char* jsonPath,
+	char* outTex, size_t outTexLen,
+	float* outW, float* outH)
+{
+	if (!jsonPath || !jsonPath[0]) return false;
+	std::ifstream f(jsonPath);
+	if (!f.is_open()) return false;
+	std::string line;
+	while (std::getline(f, line)) {
+		if (outW && line.find("\"width\"") != std::string::npos) {
+			sscanf_s(line.c_str(), " \"width\": %f", outW);
+		}
+		if (outH && line.find("\"height\"") != std::string::npos) {
+			sscanf_s(line.c_str(), " \"height\": %f", outH);
+		}
+		if (outTex && line.find("\"texturePath\"") != std::string::npos) {
+			size_t s = line.find(": \"");
+			if (s != std::string::npos) {
+				s += 3;
+				size_t e = line.rfind("\"");
+				if (e > s) {
+					std::string v = line.substr(s, e - s);
+					strncpy_s(outTex, outTexLen, v.c_str(), _TRUNCATE);
+				}
+			}
+		}
+	}
+	return true;
+}
+
+void ResolvePreviewMeta(PlacedObject& po)
+{
+	po.previewSRV = nullptr;
+	po.previewW   = -1.0f;
+	po.previewH   = -1.0f;
+	if (!po.configFile[0] || po.type == PLACED_BALLSPAWN) return;
+
+	char texPath[256] = {};
+	float w = -1.0f, h = -1.0f;
+	if (!ReadPreviewMetaFromJSON(po.configFile, texPath, sizeof(texPath), &w, &h))
+		return;
+
+	if (w > 0.0f) po.previewW = w;
+	if (h > 0.0f) po.previewH = h;
+	if (texPath[0]) po.previewSRV = CacheLoadTexture(texPath);
+}
 bool LoadMenuConfig(const char* fullPath);
 bool LoadBossConfig(const char* fullPath);
 bool LoadPortalConfig(const char* fullPath);
@@ -302,6 +360,8 @@ bool LoadStageJSON(const char* fullPath)
 					strcpy_s(po.displayName, 64, v.c_str());
 				}
 			}
+			// Resolve metadados de preview (SRV + dimensoes reais).
+			ResolvePreviewMeta(po);
 			stageObjects.push_back(po);
 		}
 	}
@@ -324,7 +384,7 @@ bool LoadStageJSON(const char* fullPath)
 // Cada PlacedObject referencia um JSON de config que eh lido para obter stats.
 // ==========================================
 
-static bool LoadBlockConfigFromFile(const char* path, BlockConfig& cfg)
+bool LoadBlockConfigFromFile(const char* path, BlockConfig& cfg)
 {
 	std::ifstream jf(path);
 	if (!jf.is_open()) return false;

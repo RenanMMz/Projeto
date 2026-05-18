@@ -893,14 +893,123 @@ static void ResetEnemyDemo()
 	s_demoEInit = true;
 }
 
+// Estado da simulacao de tiros no preview de boss.
+// Alvo virtual fixo onde o paddle real apareceria em gameplay.
+static std::vector<EnemyBullet> s_demoBossBullets;
+static int   s_demoBossLastActIdx  = -1;
+static constexpr float kBossVirtualPaddleX = 0.0f;
+static constexpr float kBossVirtualPaddleY = -0.6f;
+
+// ==========================================
+// Mini-burst para o demo do boss.
+// Replica a logica de Game.cpp:StartBurst/TickBurst em escala reduzida:
+//   - patterns 0 (leque) e 2 (radial) sao emitidos instantaneamente.
+//   - patterns 1 (velocidades crescentes), 3 (espiral) e 5 (reto p/ baixo)
+//     emitem um tiro a cada `stepFrames` frames via DemoBossTickBurst.
+// Permite que o demo respeite o act.bulletPattern configurado, em vez de
+// usar leque fixo independente do tipo.
+// ==========================================
+struct DemoBossBurst {
+	int   pattern;
+	int   count;
+	int   idx;
+	int   shotsRemaining;
+	float speed;
+	float angle;        // base (calculada na entrada da acao)
+	int   stepFrames;
+	int   subTimer;
+};
+
+static void DemoBossStartBurst(DemoBossBurst& brst, const BossAction& act,
+	float originX, float originY, float targetX, float targetY,
+	std::vector<EnemyBullet>& outBullets)
+{
+	const int   cnt = (act.bulletCount > 0) ? act.bulletCount : 1;
+	const float spd = (act.bulletSpeed > 0.0f) ? act.bulletSpeed : 0.012f;
+	const int   pat = act.bulletPattern;
+	const float baseAng = atan2f(targetY - originY, targetX - originX);
+
+	brst.pattern = pat;
+	brst.count   = cnt;
+	brst.speed   = spd;
+	brst.idx     = 0;
+	brst.angle   = baseAng;
+	brst.stepFrames = 4;
+	brst.subTimer   = brst.stepFrames; // primeiro tiro sai no proximo tick
+	brst.shotsRemaining = 0;
+
+	if (pat == 0 || pat == 2) {
+		// Padroes simultaneos: emite tudo agora.
+		for (int i = 0; i < cnt; i++) {
+			float a;
+			if (pat == 0) {
+				const float spread = 1.0f;
+				a = (cnt > 1) ? (baseAng - spread * 0.5f + spread * i / (cnt - 1))
+					: baseAng;
+			}
+			else { // pat == 2: radial
+				a = (2.0f * 3.14159265f * i) / (float)cnt;
+			}
+			EnemyBullet b{};
+			b.x = originX; b.y = originY; b.size = 0.012f; b.active = true;
+			b.vx = cosf(a) * spd;
+			b.vy = sinf(a) * spd;
+			outBullets.push_back(b);
+		}
+		return;
+	}
+
+	// Padroes sequenciais (1, 3, 5): TickBurst emitira em frames subsequentes.
+	brst.shotsRemaining = cnt;
+}
+
+// Emite no maximo um tiro por chamada quando ha rajada sequencial pendente.
+// originX/Y atualizam a cada chamada para que tiros saiam da posicao
+// corrente do boss (que pode estar se movendo).
+static void DemoBossTickBurst(DemoBossBurst& brst, float originX, float originY,
+	std::vector<EnemyBullet>& outBullets)
+{
+	if (brst.shotsRemaining <= 0) return;
+	brst.subTimer++;
+	if (brst.subTimer < brst.stepFrames) return;
+	brst.subTimer = 0;
+
+	const int   i   = brst.idx;
+	float       a   = brst.angle;
+	float       spd = brst.speed;
+
+	switch (brst.pattern) {
+	case 1: spd = 0.005f + i * 0.002f; break;        // velocidades crescentes
+	case 3: a   = i * 0.5f;                          // espiral
+	        spd = 0.003f + i * 0.0003f; break;
+	case 5: a   = -1.5708f; break;                   // reto p/ baixo (-PI/2)
+	default: break;                                  // 0 e 2 sao instantaneos
+	}
+
+	EnemyBullet b{};
+	b.x = originX; b.y = originY; b.size = 0.012f; b.active = true;
+	b.vx = cosf(a) * spd;
+	b.vy = sinf(a) * spd;
+	outBullets.push_back(b);
+
+	brst.idx++;
+	brst.shotsRemaining--;
+}
+
+static DemoBossBurst s_demoBossBurst = {};
+
 static void ResetBossDemo()
 {
 	s_demoBX = (editorBossConfig.startX != 0.0f) ? editorBossConfig.startX : PREVIEW_CX;
 	s_demoBY = (editorBossConfig.startY != 0.0f) ? editorBossConfig.startY : 0.5f;
 	s_demoBActIdx = 0; s_demoBTimer = 0.0f;
 	for (int i = 0; i < BOSS_MAX_FAMILIARS; i++) s_demoFamAngles[i] = 0.0f;
+	s_demoBossBullets.clear();
+	s_demoBossLastActIdx = -1;
+	s_demoBossBurst = {};
 	s_demoBInit = true;
 }
+
 
 // --- preview por painel ---
 
@@ -955,9 +1064,241 @@ static void RenderPreview_Obstacle()
 			editorObstacleConfig.colorB, editorObstacleConfig.colorA);
 }
 
+// ==========================================
+// Estado do demo do Stage Editor.
+// ----------------------------------------------------------------------
+// Quando g_editorStageDemoActive == true, o preview do stage anima os
+// blocos posicionados conforme seus parametros de movType/movSpeed/
+// movAmplitude/movRadius e emite projeteis em rajadas periodicas. A
+// finalidade e' que o autor visualize o "feel" do estagio sem precisar
+// salvar, sair do editor e entrar em gameplay.
+// Reconstroi a lista a cada vez que o demo e' (re)ativado, lendo o JSON
+// referenciado por cada PlacedObject via LoadBlockConfigFromFile.
+// ==========================================
+struct StageDemoBlock {
+	float originX, originY;
+	float curX,    curY;
+	float hw, hh;
+	float movAngle;
+	EnemyMovType movType;
+	float movSpeed, movAmplitude, movRadius;
+	int   bulletPattern, bulletCount;
+	float bulletSpeed;
+	int   shootIntervalFrames;
+	int   shootTimer;
+	float colorR, colorG, colorB, colorA;
+	ID3D11ShaderResourceView* srv;
+};
+
+// Boss instanciado dentro do demo do Stage (no maximo um por estagio).
+// Reproduz simplificacao do RenderPreview_Boss usando sempre a fase 0
+// (HP cheio) e direcionando tiros a um paddle virtual em (0, -0.6).
+struct StageDemoBoss {
+	bool   active;
+	int    placedIndex;          // indice no stageObjects para skip no render
+	float  curX, curY;           // posicao animada
+	int    actIdx;               // passo corrente do script
+	float  actTimer;             // tempo decorrido na acao (segundos)
+	int    lastShootActIdx;      // detecta entrada em nova acao
+	DemoBossBurst burst;         // rajada conforme bulletPattern
+	float  hw, hh;               // meio-dimensoes do quad
+	BossConfig config;           // copia independente da config global
+	ID3D11ShaderResourceView* srv;
+};
+static std::vector<StageDemoBlock>  s_demoStageBlocks;
+static std::vector<EnemyBullet>     s_demoStageBullets;
+static StageDemoBoss                s_demoStageBoss;
+static bool                         s_demoStageInit = false;
+
+static void InitStageDemo()
+{
+	s_demoStageBlocks.clear();
+	s_demoStageBullets.clear();
+	s_demoStageBoss = {}; // reset
+
+	for (int i = 0; i < (int)stageObjects.size(); i++) {
+		auto& o = stageObjects[i];
+
+		if (o.type == PLACED_BLOCK) {
+			BlockConfig cfg = editorBlockConfig; // defaults antes do load
+			if (o.configFile[0] != '\0')
+				LoadBlockConfigFromFile(o.configFile, cfg);
+			StageDemoBlock d{};
+			d.originX = o.x; d.originY = o.y;
+			d.curX    = o.x; d.curY    = o.y;
+			float w = (o.previewW > 0.0f) ? o.previewW : cfg.width;
+			float h = (o.previewH > 0.0f) ? o.previewH : cfg.height;
+			d.hw = w * 0.5f; d.hh = h * 0.5f;
+			d.movAngle = 0.0f;
+			d.movType      = cfg.movType;
+			d.movSpeed     = cfg.movSpeed;
+			d.movAmplitude = cfg.movAmplitude;
+			d.movRadius    = cfg.movRadius;
+			d.bulletPattern      = cfg.bulletPattern;
+			d.bulletCount        = (cfg.bulletCount > 0) ? cfg.bulletCount : 1;
+			d.bulletSpeed        = (cfg.bulletSpeed > 0.0f) ? cfg.bulletSpeed : 0.008f;
+			d.shootIntervalFrames= (cfg.shootIntervalFrames > 0) ? cfg.shootIntervalFrames : 60;
+			d.shootTimer         = (int)(d.shootIntervalFrames * 0.5f); // dessincroniza arranque
+			d.colorR = cfg.colorR; d.colorG = cfg.colorG;
+			d.colorB = cfg.colorB; d.colorA = cfg.colorA;
+			d.srv    = o.previewSRV;
+			s_demoStageBlocks.push_back(d);
+		}
+		else if (o.type == PLACED_BOSS && !s_demoStageBoss.active) {
+			// Carrega a BossConfig do JSON. LoadBossConfig sobrescreve a
+			// global editorBossConfig — preservamos e restauramos para nao
+			// poluir o estado da aba Boss.
+			BossConfig savedConfig = editorBossConfig;
+			if (o.configFile[0] != '\0')
+				LoadBossConfig(o.configFile);
+			s_demoStageBoss.config = editorBossConfig;
+			editorBossConfig = savedConfig;
+
+			s_demoStageBoss.active      = true;
+			s_demoStageBoss.placedIndex = i;
+			s_demoStageBoss.curX = (o.x != 0.0f) ? o.x : s_demoStageBoss.config.startX;
+			s_demoStageBoss.curY = (o.y != 0.0f) ? o.y : s_demoStageBoss.config.startY;
+			s_demoStageBoss.actIdx       = 0;
+			s_demoStageBoss.actTimer     = 0.0f;
+			s_demoStageBoss.lastShootActIdx = -1;
+			s_demoStageBoss.burst        = {};
+			float bw = (s_demoStageBoss.config.width  > 0.0f) ? s_demoStageBoss.config.width  : 0.2f;
+			float bh = (s_demoStageBoss.config.height > 0.0f) ? s_demoStageBoss.config.height : 0.2f;
+			s_demoStageBoss.hw = bw * 0.5f;
+			s_demoStageBoss.hh = bh * 0.5f;
+			s_demoStageBoss.srv = o.previewSRV;
+		}
+	}
+	s_demoStageInit = true;
+}
+
+// Atualiza o boss do demo do stage por frame: avanca o script da fase 0
+// (sem variacao de HP), aciona disparos e mantem o estado de movimento.
+// Tiros sao direcionados a um "paddle virtual" em (0, -0.6), mesma logica
+// usada no preview do Boss Editor.
+static void UpdateStageDemoBoss()
+{
+	if (!s_demoStageBoss.active) return;
+	const BossConfig& cfg = s_demoStageBoss.config;
+	if (cfg.hpPhaseCount <= 0) return;
+
+	// Sempre fase 0 no demo do stage (sem slider de HP nesta tela).
+	const BossScript& sc = cfg.hpPhases[0].script;
+	if (sc.actionCount <= 0) return;
+
+	int actIdx = s_demoStageBoss.actIdx % sc.actionCount;
+	const BossAction& act = sc.actions[actIdx];
+	s_demoStageBoss.actTimer += 1.0f / 60.0f;
+
+	constexpr float kVirtualPaddleX = 0.0f;
+	constexpr float kVirtualPaddleY = -0.6f;
+
+	// Detecta entrada em nova acao.
+	//  - SHOOT_FIXED_PTS: uma bullet por ponto fixo (instantaneo).
+	//  - SHOOT_TIMED: inicia rajada conforme act.bulletPattern via helper
+	//    compartilhado (DemoBossStartBurst); 0/2 emitem tudo agora, 1/3/5
+	//    emitem gradualmente em DemoBossTickBurst.
+	if (actIdx != s_demoStageBoss.lastShootActIdx) {
+		s_demoStageBoss.lastShootActIdx = actIdx;
+		s_demoStageBoss.burst = {};
+
+		if (act.type == BOSS_ACT_SHOOT_FIXED_PTS) {
+			const float spd = (act.bulletSpeed > 0) ? act.bulletSpeed : 0.012f;
+			for (int fp = 0; fp < act.fixedPointCount && fp < 8; fp++) {
+				float dx = act.fixedPtsX[fp] - s_demoStageBoss.curX;
+				float dy = act.fixedPtsY[fp] - s_demoStageBoss.curY;
+				float ang = atan2f(dy, dx);
+				EnemyBullet b{};
+				b.x = s_demoStageBoss.curX; b.y = s_demoStageBoss.curY;
+				b.vx = cosf(ang) * spd;
+				b.vy = sinf(ang) * spd;
+				b.size = 0.012f; b.active = true;
+				s_demoStageBullets.push_back(b);
+			}
+		}
+		else if (act.type == BOSS_ACT_SHOOT_TIMED) {
+			DemoBossStartBurst(s_demoStageBoss.burst, act,
+				s_demoStageBoss.curX, s_demoStageBoss.curY,
+				kVirtualPaddleX, kVirtualPaddleY,
+				s_demoStageBullets);
+		}
+	}
+
+	// Emissao gradual de patterns sequenciais (1, 3, 5).
+	if (act.type == BOSS_ACT_SHOOT_TIMED) {
+		DemoBossTickBurst(s_demoStageBoss.burst,
+			s_demoStageBoss.curX, s_demoStageBoss.curY,
+			s_demoStageBullets);
+	}
+
+	switch (act.type) {
+	case BOSS_ACT_MOVE_TO: {
+		float dx = act.targetX - s_demoStageBoss.curX;
+		float dy = act.targetY - s_demoStageBoss.curY;
+		float len = sqrtf(dx * dx + dy * dy);
+		float sp = (act.speed > 0) ? act.speed : 0.01f;
+		if (len <= sp || len < 0.005f) {
+			s_demoStageBoss.curX = act.targetX;
+			s_demoStageBoss.curY = act.targetY;
+			s_demoStageBoss.actIdx++; s_demoStageBoss.actTimer = 0.0f;
+		}
+		else {
+			s_demoStageBoss.curX += (dx / len) * sp;
+			s_demoStageBoss.curY += (dy / len) * sp;
+		}
+		break;
+	}
+	case BOSS_ACT_TELEPORT:
+		s_demoStageBoss.curX = act.targetX;
+		s_demoStageBoss.curY = act.targetY;
+		s_demoStageBoss.actIdx++; s_demoStageBoss.actTimer = 0.0f; break;
+	case BOSS_ACT_WAIT:
+	case BOSS_ACT_SHOOT_TIMED:
+	case BOSS_ACT_SHOOT_FIXED_PTS:
+		if (s_demoStageBoss.actTimer >= act.duration) {
+			s_demoStageBoss.actIdx++; s_demoStageBoss.actTimer = 0.0f;
+		} break;
+	default:
+		if (s_demoStageBoss.actTimer >= 1.0f) {
+			s_demoStageBoss.actIdx++; s_demoStageBoss.actTimer = 0.0f;
+		} break;
+	}
+	if (s_demoStageBoss.actIdx >= sc.actionCount)
+		s_demoStageBoss.actIdx = sc.loopFromStep;
+}
+
+// Emite bullets baseando-se no pattern. Versao simplificada da logica de
+// gameplay (Game.cpp) — suficiente para visualizacao no editor.
+static void EmitStageDemoBullets(const StageDemoBlock& d)
+{
+	const float pi2  = 2.0f * 3.14159265f;
+	const int   cnt  = d.bulletCount;
+	const float spd  = d.bulletSpeed;
+	for (int i = 0; i < cnt; i++) {
+		float a;
+		switch (d.bulletPattern) {
+		case 0: { // leque para baixo
+			float spread = 1.0f;
+			a = -3.14159265f * 0.5f
+				+ (cnt > 1 ? -spread * 0.5f + spread * i / (cnt - 1) : 0.0f);
+		} break;
+		case 1: a = -3.14159265f * 0.5f; break;               // reto para baixo
+		case 2: a = pi2 * i / (cnt > 0 ? cnt : 1); break;      // radial
+		case 3: a = i * 0.5f; break;                          // espiral
+		case 4: a = pi2 * ((float)rand() / RAND_MAX); break;  // aleatorio
+		case 5: a = -3.14159265f * 0.5f; break;               // para baixo fixo
+		default: a = -3.14159265f * 0.5f; break;
+		}
+		EnemyBullet b{};
+		b.x = d.curX; b.y = d.curY; b.size = 0.012f; b.active = true;
+		b.vx = cosf(a) * spd; b.vy = sinf(a) * spd;
+		s_demoStageBullets.push_back(b);
+	}
+}
+
 static void RenderPreview_Stage()
 {
-	// Stage preview cobre a tela inteira — o stage eh o viewport completo do jogo
+	// Background do stage (cobre o viewport inteiro).
 	if (editorStageEditorConfig.useTextureBg && stageBgTexture)
 		DrawTexturedQuad(stageBgTexture, -1.0f, -1.0f, 1.0f, 1.0f);
 	else
@@ -967,26 +1308,141 @@ static void RenderPreview_Stage()
 
 	DrawBall(editorStageConfig.ballStartX, editorStageConfig.ballStartY, ballSize, 0.2f, 1.0f, 0.3f);
 
+	// ===== MODO DEMO =====
+	if (g_editorStageDemoActive) {
+		// (Re)inicializa quando o demo e' ligado, ou quando a lista de
+		// objetos foi alterada (acrescentou/removeu blocos ou boss).
+		const int curBlocks = (int)std::count_if(stageObjects.begin(), stageObjects.end(),
+			[](const PlacedObject& o) { return o.type == PLACED_BLOCK; });
+		bool curHasBoss = false;
+		for (auto& o : stageObjects)
+			if (o.type == PLACED_BOSS) { curHasBoss = true; break; }
+		if (!s_demoStageInit ||
+			(int)s_demoStageBlocks.size() != curBlocks ||
+			s_demoStageBoss.active != curHasBoss) {
+			InitStageDemo();
+		}
+
+		// Atualiza cada bloco do demo: movimento + emissao periodica.
+		for (auto& d : s_demoStageBlocks) {
+			d.movAngle += d.movSpeed;
+			switch (d.movType) {
+			case MOV_VERTICAL:
+				d.curX = d.originX;
+				d.curY = d.originY + sinf(d.movAngle) * d.movAmplitude;
+				break;
+			case MOV_HORIZONTAL:
+				d.curX = d.originX + sinf(d.movAngle) * d.movAmplitude;
+				d.curY = d.originY;
+				break;
+			case MOV_CIRCULAR:
+				d.curX = d.originX + cosf(d.movAngle) * d.movRadius;
+				d.curY = d.originY + sinf(d.movAngle) * d.movRadius;
+				break;
+			case MOV_NONE:
+			default:
+				d.curX = d.originX; d.curY = d.originY;
+				break;
+			}
+			d.shootTimer++;
+			if (d.shootTimer >= d.shootIntervalFrames) {
+				d.shootTimer = 0;
+				EmitStageDemoBullets(d);
+			}
+		}
+
+		// Atualiza o boss (se presente): script + disparos.
+		UpdateStageDemoBoss();
+
+		// Update bullets (move + descarta fora do viewport).
+		for (auto& b : s_demoStageBullets) {
+			if (!b.active) continue;
+			b.x += b.vx; b.y += b.vy;
+			if (b.x < -1.1f || b.x > 1.1f || b.y < -1.1f || b.y > 1.1f)
+				b.active = false;
+		}
+		s_demoStageBullets.erase(
+			std::remove_if(s_demoStageBullets.begin(), s_demoStageBullets.end(),
+				[](const EnemyBullet& b) { return !b.active; }),
+			s_demoStageBullets.end());
+	}
+	else if (s_demoStageInit) {
+		// Demo desligado: descarta estado para reiniciar limpo na proxima vez.
+		s_demoStageBlocks.clear();
+		s_demoStageBullets.clear();
+		s_demoStageBoss = {};
+		s_demoStageInit = false;
+	}
+
+	// ===== DESENHO DOS OBJETOS =====
+	auto drawPlacedTexturedOrColor = [](float ox, float oy, ID3D11ShaderResourceView* srv,
+		float hw, float hh, float r, float g, float b, float a)
+	{
+		if (srv) {
+			DrawTexturedQuad(srv, ox - hw, oy - hh, ox + hw, oy + hh);
+		}
+		else {
+			DrawQuadColor(ox, oy, hw, hh, r, g, b, a);
+		}
+	};
+
+	auto sizeFor = [](const PlacedObject& o, float fallbackW, float fallbackH,
+		float& outHw, float& outHh)
+	{
+		outHw = ((o.previewW > 0.0f) ? o.previewW : fallbackW) * 0.5f;
+		outHh = ((o.previewH > 0.0f) ? o.previewH : fallbackH) * 0.5f;
+	};
+
+	// Se o demo estiver ativo, blocos vem do s_demoStageBlocks (posicao animada).
+	// Caso contrario, blocos vem direto do stageObjects (posicao estatica).
+	int demoBlockIdx = 0;
 	for (auto& o : stageObjects) {
+		float hw, hh;
 		switch (o.type) {
 		case PLACED_BLOCK:
-			DrawQuadColor(o.x, o.y, editorBlockConfig.width / 2.0f, editorBlockConfig.height / 2.0f,
-				editorBlockConfig.colorR, editorBlockConfig.colorG,
-				editorBlockConfig.colorB, editorBlockConfig.colorA); break;
+			if (g_editorStageDemoActive && demoBlockIdx < (int)s_demoStageBlocks.size()) {
+				const StageDemoBlock& d = s_demoStageBlocks[demoBlockIdx++];
+				drawPlacedTexturedOrColor(d.curX, d.curY, d.srv, d.hw, d.hh,
+					d.colorR, d.colorG, d.colorB, d.colorA);
+			}
+			else {
+				sizeFor(o, editorBlockConfig.width, editorBlockConfig.height, hw, hh);
+				drawPlacedTexturedOrColor(o.x, o.y, o.previewSRV, hw, hh,
+					editorBlockConfig.colorR, editorBlockConfig.colorG,
+					editorBlockConfig.colorB, editorBlockConfig.colorA);
+			}
+			break;
 		case PLACED_OBSTACLE:
-			DrawQuadColor(o.x, o.y, editorObstacleConfig.width / 2.0f, editorObstacleConfig.height / 2.0f,
+			sizeFor(o, editorObstacleConfig.width, editorObstacleConfig.height, hw, hh);
+			drawPlacedTexturedOrColor(o.x, o.y, o.previewSRV, hw, hh,
 				editorObstacleConfig.colorR, editorObstacleConfig.colorG,
 				editorObstacleConfig.colorB, editorObstacleConfig.colorA); break;
 		case PLACED_BOSS:
-			DrawQuadColor(o.x, o.y, editorBossConfig.width / 2.0f, editorBossConfig.height / 2.0f,
-				0.9f, 0.2f, 0.2f, 1.0f); break;
+			if (g_editorStageDemoActive && s_demoStageBoss.active) {
+				// Posicao animada pelo script da fase 0.
+				drawPlacedTexturedOrColor(s_demoStageBoss.curX, s_demoStageBoss.curY,
+					s_demoStageBoss.srv,
+					s_demoStageBoss.hw, s_demoStageBoss.hh,
+					0.9f, 0.2f, 0.2f, 1.0f);
+			}
+			else {
+				sizeFor(o, editorBossConfig.width, editorBossConfig.height, hw, hh);
+				drawPlacedTexturedOrColor(o.x, o.y, o.previewSRV, hw, hh, 0.9f, 0.2f, 0.2f, 1.0f);
+			}
+			break;
 		case PLACED_PORTAL:
-			DrawQuadColor(o.x, o.y, editorPortalConfig.width / 2.0f, editorPortalConfig.height / 2.0f,
-				0.1f, 0.7f, 0.9f, 1.0f); break;
+			sizeFor(o, editorPortalConfig.width, editorPortalConfig.height, hw, hh);
+			drawPlacedTexturedOrColor(o.x, o.y, o.previewSRV, hw, hh, 0.1f, 0.7f, 0.9f, 1.0f); break;
 		default:
-			// PLACED_BALLSPAWN cai aqui — desenha-se um marcador esferico.
 			DrawBall(o.x, o.y, ballSize, 0.2f, 1.0f, 0.3f); break;
 		}
+	}
+
+	// Bullets do demo desenhadas por cima.
+	for (auto& b : s_demoStageBullets) {
+		if (!b.active) continue;
+		float r = b.size * 0.5f;
+		DrawQuadColor(b.x, b.y, r, r, 1.0f, 0.45f, 0.15f, 1.0f);
 	}
 }
 
@@ -1144,8 +1600,47 @@ static void RenderPreview_Boss()
 		if (editorBossConfig.hpPhaseCount > 0) {
 			BossScript& sc = editorBossConfig.hpPhases[currentPhase].script;
 			if (sc.actionCount > 0) {
-				BossAction& act = sc.actions[s_demoBActIdx % sc.actionCount];
+				int actIdx = s_demoBActIdx % sc.actionCount;
+				BossAction& act = sc.actions[actIdx];
 				s_demoBTimer += 1.0f / 60.0f;
+
+				// Disparos: detecta entrada em nova acao.
+				//  - SHOOT_FIXED_PTS: rajada unica, uma bullet por ponto fixo.
+				//  - SHOOT_TIMED: inicia rajada conforme bulletPattern (via
+				//    DemoBossStartBurst — patterns 0/2 emitem tudo, 1/3/5
+				//    emitem gradualmente em DemoBossTickBurst abaixo).
+				if (actIdx != s_demoBossLastActIdx) {
+					s_demoBossLastActIdx = actIdx;
+					s_demoBossBurst = {};
+
+					if (act.type == BOSS_ACT_SHOOT_FIXED_PTS) {
+						const float spd = (act.bulletSpeed > 0) ? act.bulletSpeed : 0.012f;
+						for (int fp = 0; fp < act.fixedPointCount && fp < 8; fp++) {
+							float dx = act.fixedPtsX[fp] - s_demoBX;
+							float dy = act.fixedPtsY[fp] - s_demoBY;
+							float ang = atan2f(dy, dx);
+							EnemyBullet b{};
+							b.x = s_demoBX; b.y = s_demoBY;
+							b.vx = cosf(ang) * spd;
+							b.vy = sinf(ang) * spd;
+							b.size = 0.012f; b.active = true;
+							s_demoBossBullets.push_back(b);
+						}
+					}
+					else if (act.type == BOSS_ACT_SHOOT_TIMED) {
+						DemoBossStartBurst(s_demoBossBurst, act,
+							s_demoBX, s_demoBY,
+							kBossVirtualPaddleX, kBossVirtualPaddleY,
+							s_demoBossBullets);
+					}
+				}
+
+				// Emissao gradual dos padroes sequenciais (1, 3, 5).
+				if (act.type == BOSS_ACT_SHOOT_TIMED) {
+					DemoBossTickBurst(s_demoBossBurst, s_demoBX, s_demoBY,
+						s_demoBossBullets);
+				}
+
 				switch (act.type) {
 				case BOSS_ACT_MOVE_TO: {
 					float dx = act.targetX - s_demoBX, dy = act.targetY - s_demoBY, len = sqrtf(dx * dx + dy * dy);
@@ -1166,6 +1661,7 @@ static void RenderPreview_Boss()
 					s_demoBActIdx++; s_demoBTimer = 0; break;
 				case BOSS_ACT_WAIT:
 				case BOSS_ACT_SHOOT_TIMED:
+				case BOSS_ACT_SHOOT_FIXED_PTS:
 					if (s_demoBTimer >= act.duration) {
 						s_demoBActIdx++; s_demoBTimer = 0;
 					} break;
@@ -1178,12 +1674,33 @@ static void RenderPreview_Boss()
 			}
 		}
 		cx = s_demoBX; cy = s_demoBY;
+
+		// Atualiza posicao das bullets demo e descarta as que sairam do viewport.
+		for (auto& b : s_demoBossBullets) {
+			if (!b.active) continue;
+			b.x += b.vx; b.y += b.vy;
+			if (b.x < -1.1f || b.x > 1.1f || b.y < -1.1f || b.y > 1.1f)
+				b.active = false;
+		}
+		s_demoBossBullets.erase(
+			std::remove_if(s_demoBossBullets.begin(), s_demoBossBullets.end(),
+				[](const EnemyBullet& b) { return !b.active; }),
+			s_demoBossBullets.end());
+	}
+	else {
+		// Demo desligado: limpa bullets remanescentes para evitar acumulo
+		// quando o usuario reativar.
+		if (!s_demoBossBullets.empty()) s_demoBossBullets.clear();
+		s_demoBossLastActIdx = -1;
+		s_demoBossBurst = {};
 	}
 
 	// Draw start position marker (small diamond)
 	DrawQuadColor(startCX, startCY, 0.015f, 0.015f, 0.3f, 0.9f, 0.3f, 0.6f);
 
-	// Draw movement target markers for current phase script
+	// Draw movement target markers for current phase script.
+	// MOVE_TO → azul-esverdeado; TELEPORT → laranja claro; FIXED_PTS → laranja
+	// escuro; SPAWN_MINION → ciano (novo). Todos arrastaveis em UpdateEditor.
 	if (editorBossConfig.hpPhaseCount > 0) {
 		BossScript& sc = editorBossConfig.hpPhases[currentPhase].script;
 		for (int i = 0; i < sc.actionCount; i++) {
@@ -1196,6 +1713,12 @@ static void RenderPreview_Boss()
 			if (act.type == BOSS_ACT_SHOOT_FIXED_PTS) {
 				for (int fp = 0; fp < act.fixedPointCount; fp++)
 					DrawQuadColor(act.fixedPtsX[fp], act.fixedPtsY[fp], 0.008f, 0.008f, 1.0f, 0.5f, 0.2f, 0.5f);
+			}
+			if (act.type == BOSS_ACT_SPAWN_MINION) {
+				DrawQuadColor(act.spawnX, act.spawnY, 0.012f, 0.012f, 0.2f, 0.85f, 0.95f, 0.55f);
+				// Cruz interna para distinguir do marcador de MOVE_TO.
+				DrawQuadColor(act.spawnX, act.spawnY, 0.012f, 0.0015f, 1.0f, 1.0f, 1.0f, 0.8f);
+				DrawQuadColor(act.spawnX, act.spawnY, 0.0015f, 0.012f, 1.0f, 1.0f, 1.0f, 0.8f);
 			}
 		}
 	}
@@ -1229,24 +1752,59 @@ static void RenderPreview_Boss()
 				DrawQuadColor(dx, dy, 0.004f, 0.004f, 0.5f, 0.5f, 0.7f, 0.45f);
 			}
 
-			// Familiar (quad laranja sem textura — sprite nao e' carregado
-			// no editor, mas a posicao/orbita ja' fica visivel).
-			DrawQuadColor(fx, fy, 0.022f, 0.022f, 0.95f, 0.6f, 0.15f, 1.0f);
-			// Borda branca para destacar
-			DrawQuadColor(fx, fy + 0.022f, 0.022f, 0.003f, 1.0f, 1.0f, 1.0f, 0.7f);
-			DrawQuadColor(fx, fy - 0.022f, 0.022f, 0.003f, 1.0f, 1.0f, 1.0f, 0.7f);
+			// Sprite do familiar a partir do cache de texturas; fallback colorido
+			// (quad laranja com borda) caso nao haja textura associada.
+			ID3D11ShaderResourceView* famSrv =
+				(fam.texturePath[0]) ? GetCachedTexture(fam.texturePath) : nullptr;
+			const float famHw = 0.022f;
+			if (famSrv) {
+				DrawTexturedQuad(famSrv, fx - famHw, fy - famHw, fx + famHw, fy + famHw);
+			}
+			else {
+				DrawQuadColor(fx, fy, famHw, famHw, 0.95f, 0.6f, 0.15f, 1.0f);
+				DrawQuadColor(fx, fy + famHw, famHw, 0.003f, 1.0f, 1.0f, 1.0f, 0.7f);
+				DrawQuadColor(fx, fy - famHw, famHw, 0.003f, 1.0f, 1.0f, 1.0f, 0.7f);
+			}
 		}
 	}
 
 	// Multipart nodes — desenha cada node na sua posicao inicial configurada,
 	// para que o autor possa visualizar a montagem do boss multipartido.
+	// Usa textura via cache quando disponivel; fallback colorido (quad roxo)
+	// preserva a visibilidade quando a textura ainda nao foi atribuida.
 	if (editorBossConfig.archetype == BOSS_ARCH_MULTIPART) {
+		const float nhw = hw * 0.6f;
+		const float nhh = hh * 0.6f;
 		for (int i = 0; i < editorBossConfig.nodeCount && i < BOSS_MAX_NODES; i++) {
 			const MultipartNode& n = editorBossConfig.nodes[i];
-			DrawQuadColor(n.startX, n.startY, hw * 0.6f, hh * 0.6f, 0.7f, 0.3f, 0.9f, 0.95f);
-			DrawQuadColor(n.startX, n.startY + hh * 0.6f, hw * 0.6f, 0.003f, 1.0f, 1.0f, 1.0f, 0.6f);
-			DrawQuadColor(n.startX, n.startY - hh * 0.6f, hw * 0.6f, 0.003f, 1.0f, 1.0f, 1.0f, 0.6f);
+			ID3D11ShaderResourceView* nodeSrv =
+				(n.texturePath[0]) ? GetCachedTexture(n.texturePath) : nullptr;
+			if (nodeSrv) {
+				DrawTexturedQuad(nodeSrv,
+					n.startX - nhw, n.startY - nhh,
+					n.startX + nhw, n.startY + nhh);
+			}
+			else {
+				DrawQuadColor(n.startX, n.startY, nhw, nhh, 0.7f, 0.3f, 0.9f, 0.95f);
+				DrawQuadColor(n.startX, n.startY + nhh, nhw, 0.003f, 1.0f, 1.0f, 1.0f, 0.6f);
+				DrawQuadColor(n.startX, n.startY - nhh, nhw, 0.003f, 1.0f, 1.0f, 1.0f, 0.6f);
+			}
 		}
+	}
+
+	// Bullets demo (SHOOT_TIMED + SHOOT_FIXED_PTS) — pequenos quads laranja.
+	// Desenhadas depois do boss/familiares/nodes para ficarem por cima.
+	for (auto& b : s_demoBossBullets) {
+		if (!b.active) continue;
+		float r = b.size * 0.5f;
+		DrawQuadColor(b.x, b.y, r, r, 1.0f, 0.45f, 0.15f, 1.0f);
+	}
+
+	// Marcador do "paddle virtual" — alvo dos tiros direcionados ao jogador
+	// durante a demonstracao. Apenas referencia visual; nao colide com nada.
+	if (editorDemoActive) {
+		DrawQuadColor(kBossVirtualPaddleX, kBossVirtualPaddleY,
+			0.07f, 0.012f, 0.55f, 0.55f, 0.6f, 0.55f);
 	}
 
 	// Barra de HP no topo do stage (NDC). Posicionada perto da borda

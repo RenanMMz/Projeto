@@ -299,23 +299,28 @@ void UpdateEditor()
 				if (s_dragObjectIdx == -1) {
 					for (int i = (int)stageObjects.size() - 1; i >= 0; i--) {
 						auto& o = stageObjects[i];
-						float hw = 0.05f, hh = 0.03f; // tamanho default para click test
+						// Usa previewW/H quando resolvidos do JSON especifico;
+						// fallback para template global do editor. Mantem
+						// hit-test coerente com o tamanho desenhado no preview.
+						float fallbackW = 0.10f, fallbackH = 0.06f;
 						if (o.type == PLACED_BLOCK) {
-							hw = editorBlockConfig.width / 2.0f;
-							hh = editorBlockConfig.height / 2.0f;
+							fallbackW = editorBlockConfig.width;
+							fallbackH = editorBlockConfig.height;
 						}
 						else if (o.type == PLACED_OBSTACLE) {
-							hw = editorObstacleConfig.width / 2.0f;
-							hh = editorObstacleConfig.height / 2.0f;
+							fallbackW = editorObstacleConfig.width;
+							fallbackH = editorObstacleConfig.height;
 						}
 						else if (o.type == PLACED_BOSS) {
-							hw = (editorBossConfig.width > 0 ? editorBossConfig.width : 0.2f) / 2.0f;
-							hh = (editorBossConfig.height > 0 ? editorBossConfig.height : 0.2f) / 2.0f;
+							fallbackW = (editorBossConfig.width  > 0) ? editorBossConfig.width  : 0.2f;
+							fallbackH = (editorBossConfig.height > 0) ? editorBossConfig.height : 0.2f;
 						}
 						else if (o.type == PLACED_PORTAL) {
-							hw = (editorPortalConfig.width  > 0 ? editorPortalConfig.width  : 0.10f) / 2.0f;
-							hh = (editorPortalConfig.height > 0 ? editorPortalConfig.height : 0.15f) / 2.0f;
+							fallbackW = (editorPortalConfig.width  > 0) ? editorPortalConfig.width  : 0.10f;
+							fallbackH = (editorPortalConfig.height > 0) ? editorPortalConfig.height : 0.15f;
 						}
+						float hw = ((o.previewW > 0.0f) ? o.previewW : fallbackW) * 0.5f;
+						float hh = ((o.previewH > 0.0f) ? o.previewH : fallbackH) * 0.5f;
 						if (ndcX >= o.x - hw && ndcX <= o.x + hw &&
 							ndcY >= o.y - hh && ndcY <= o.y + hh) {
 							s_dragObjectIdx = i;
@@ -345,7 +350,7 @@ void UpdateEditor()
 				s_dragObjectIdx = -1;
 			}
 		}
-		// Boss tab: click-to-set position picking
+		// Boss tab: click-to-set position picking (modo "..." dos campos)
 		else if (currentEditorMode == EDITOR_MODE_BOSS && s_bossPickTarget == BOSS_PICK_XY && s_bossPickX && s_bossPickY) {
 			bool lmbDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
 			if (lmbDown && !s_bossPickWasDown) {
@@ -358,6 +363,182 @@ void UpdateEditor()
 				s_bossPickX = s_bossPickY = nullptr;
 			}
 			s_bossPickWasDown = lmbDown;
+		}
+		// Boss tab: drag direto do boss base, familiares, multipart nodes e
+		// dos marcadores das acoes (MOVE_TO/TELEPORT target, FIXED_PTS, SPAWN).
+		// Hit-test em ordem de prioridade — alvos menores primeiro para que
+		// um clique sobre um marcador sobre o boss base nao "engatilhe" o
+		// drag do boss inteiro.
+		else if (currentEditorMode == EDITOR_MODE_BOSS && s_bossPickTarget == BOSS_PICK_NONE) {
+			// kind: 0=nenhum, 1=boss, 2=familiar, 3=node,
+			//       4=act target (MOVE_TO/TELEPORT), 5=act fixed_pt, 6=act spawn (MINION)
+			static int   s_bossDragKind   = 0;
+			static int   s_bossDragIdx    = -1; // familiar/node OU action index
+			static int   s_bossDragSubIdx = -1; // fixed_pt index (kind 5)
+			static float s_bossDragOffsetX = 0.0f;
+			static float s_bossDragOffsetY = 0.0f;
+			static bool  s_bossDragging   = false;
+
+			POINT pt; GetCursorPos(&pt); ScreenToClient(g_hWnd, &pt);
+			float ndcX, ndcY;
+			ScreenToNDC(pt, ndcX, ndcY);
+			bool lmbDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+
+			// Fase atual: replica logica de RenderPreview_Boss para que o
+			// hit-test atue na fase efetivamente visivel no preview.
+			int currentPhase = 0;
+			if (editorBossConfig.hpPhaseCount > 0) {
+				for (int i = 0; i < editorBossConfig.hpPhaseCount; i++)
+					if (editorDemoBossHPPct <= editorBossConfig.hpPhases[i].hpThresholdPct)
+						currentPhase = i;
+			}
+
+			if (lmbDown && !s_bossDragging) {
+				s_bossDragKind = 0; s_bossDragIdx = -1; s_bossDragSubIdx = -1;
+				s_bossDragging = true;
+
+				// 1) Marcadores das acoes (alvos menores → maior prioridade).
+				if (editorBossConfig.hpPhaseCount > 0) {
+					BossScript& sc = editorBossConfig.hpPhases[currentPhase].script;
+					const float tgtHw = 0.012f;
+					const float fpHw  = 0.008f;
+					const float spHw  = 0.012f;
+					for (int i = sc.actionCount - 1; i >= 0 && s_bossDragKind == 0; i--) {
+						BossAction& act = sc.actions[i];
+						if (act.type == BOSS_ACT_MOVE_TO || act.type == BOSS_ACT_TELEPORT) {
+							if (ndcX >= act.targetX - tgtHw && ndcX <= act.targetX + tgtHw &&
+								ndcY >= act.targetY - tgtHw && ndcY <= act.targetY + tgtHw) {
+								s_bossDragKind = 4; s_bossDragIdx = i;
+								s_bossDragOffsetX = ndcX - act.targetX;
+								s_bossDragOffsetY = ndcY - act.targetY;
+								break;
+							}
+						}
+						else if (act.type == BOSS_ACT_SHOOT_FIXED_PTS) {
+							for (int fp = act.fixedPointCount - 1; fp >= 0; fp--) {
+								float px = act.fixedPtsX[fp], py = act.fixedPtsY[fp];
+								if (ndcX >= px - fpHw && ndcX <= px + fpHw &&
+									ndcY >= py - fpHw && ndcY <= py + fpHw) {
+									s_bossDragKind = 5; s_bossDragIdx = i; s_bossDragSubIdx = fp;
+									s_bossDragOffsetX = ndcX - px;
+									s_bossDragOffsetY = ndcY - py;
+									break;
+								}
+							}
+						}
+						else if (act.type == BOSS_ACT_SPAWN_MINION) {
+							if (ndcX >= act.spawnX - spHw && ndcX <= act.spawnX + spHw &&
+								ndcY >= act.spawnY - spHw && ndcY <= act.spawnY + spHw) {
+								s_bossDragKind = 6; s_bossDragIdx = i;
+								s_bossDragOffsetX = ndcX - act.spawnX;
+								s_bossDragOffsetY = ndcY - act.spawnY;
+								break;
+							}
+						}
+					}
+				}
+
+				// 2) Familiares.
+				if (s_bossDragKind == 0 &&
+					editorBossConfig.archetype == BOSS_ARCH_STATIC_FAMILIARS) {
+					const float famHw = 0.022f;
+					const int nFam = (editorBossConfig.familiarCount < BOSS_MAX_FAMILIARS)
+						? editorBossConfig.familiarCount : BOSS_MAX_FAMILIARS;
+					for (int i = nFam - 1; i >= 0; i--) {
+						const FamiliarConfig& fam = editorBossConfig.familiars[i];
+						float fx = editorBossConfig.startX + fam.relOffsetX;
+						float fy = editorBossConfig.startY + fam.relOffsetY;
+						if (ndcX >= fx - famHw && ndcX <= fx + famHw &&
+							ndcY >= fy - famHw && ndcY <= fy + famHw) {
+							s_bossDragKind = 2; s_bossDragIdx = i;
+							s_bossDragOffsetX = ndcX - fx;
+							s_bossDragOffsetY = ndcY - fy;
+							break;
+						}
+					}
+				}
+
+				// 3) Multipart nodes.
+				if (s_bossDragKind == 0 &&
+					editorBossConfig.archetype == BOSS_ARCH_MULTIPART) {
+					float bhw = (editorBossConfig.width  > 0 ? editorBossConfig.width  : 0.2f) * 0.5f;
+					float bhh = (editorBossConfig.height > 0 ? editorBossConfig.height : 0.2f) * 0.5f;
+					float nhw = bhw * 0.6f, nhh = bhh * 0.6f;
+					const int nNodes = (editorBossConfig.nodeCount < BOSS_MAX_NODES)
+						? editorBossConfig.nodeCount : BOSS_MAX_NODES;
+					for (int i = nNodes - 1; i >= 0; i--) {
+						const MultipartNode& nd = editorBossConfig.nodes[i];
+						if (ndcX >= nd.startX - nhw && ndcX <= nd.startX + nhw &&
+							ndcY >= nd.startY - nhh && ndcY <= nd.startY + nhh) {
+							s_bossDragKind = 3; s_bossDragIdx = i;
+							s_bossDragOffsetX = ndcX - nd.startX;
+							s_bossDragOffsetY = ndcY - nd.startY;
+							break;
+						}
+					}
+				}
+
+				// 4) Boss base (alvo maior, fallback).
+				if (s_bossDragKind == 0) {
+					float bhw = (editorBossConfig.width  > 0 ? editorBossConfig.width  : 0.2f) * 0.5f;
+					float bhh = (editorBossConfig.height > 0 ? editorBossConfig.height : 0.2f) * 0.5f;
+					if (ndcX >= editorBossConfig.startX - bhw && ndcX <= editorBossConfig.startX + bhw &&
+						ndcY >= editorBossConfig.startY - bhh && ndcY <= editorBossConfig.startY + bhh) {
+						s_bossDragKind = 1;
+						s_bossDragOffsetX = ndcX - editorBossConfig.startX;
+						s_bossDragOffsetY = ndcY - editorBossConfig.startY;
+					}
+				}
+			}
+			else if (lmbDown && s_bossDragging) {
+				const float newX = ndcX - s_bossDragOffsetX;
+				const float newY = ndcY - s_bossDragOffsetY;
+
+				if (s_bossDragKind == 1) {
+					editorBossConfig.startX = newX;
+					editorBossConfig.startY = newY;
+				}
+				else if (s_bossDragKind == 2 && s_bossDragIdx >= 0 &&
+					s_bossDragIdx < BOSS_MAX_FAMILIARS) {
+					FamiliarConfig& fam = editorBossConfig.familiars[s_bossDragIdx];
+					fam.relOffsetX = newX - editorBossConfig.startX;
+					fam.relOffsetY = newY - editorBossConfig.startY;
+				}
+				else if (s_bossDragKind == 3 && s_bossDragIdx >= 0 &&
+					s_bossDragIdx < BOSS_MAX_NODES) {
+					MultipartNode& nd = editorBossConfig.nodes[s_bossDragIdx];
+					nd.startX = newX;
+					nd.startY = newY;
+				}
+				else if ((s_bossDragKind == 4 || s_bossDragKind == 5 || s_bossDragKind == 6) &&
+					editorBossConfig.hpPhaseCount > 0 &&
+					s_bossDragIdx >= 0) {
+					BossScript& sc = editorBossConfig.hpPhases[currentPhase].script;
+					if (s_bossDragIdx < sc.actionCount) {
+						BossAction& act = sc.actions[s_bossDragIdx];
+						if (s_bossDragKind == 4) {
+							act.targetX = newX;
+							act.targetY = newY;
+						}
+						else if (s_bossDragKind == 5 && s_bossDragSubIdx >= 0 &&
+							s_bossDragSubIdx < act.fixedPointCount &&
+							s_bossDragSubIdx < 8) {
+							act.fixedPtsX[s_bossDragSubIdx] = newX;
+							act.fixedPtsY[s_bossDragSubIdx] = newY;
+						}
+						else if (s_bossDragKind == 6) {
+							act.spawnX = newX;
+							act.spawnY = newY;
+						}
+					}
+				}
+			}
+			else if (!lmbDown) {
+				s_bossDragging = false;
+				s_bossDragKind = 0;
+				s_bossDragIdx  = -1;
+				s_bossDragSubIdx = -1;
+			}
 		}
 	}
 	else {
@@ -531,7 +712,10 @@ bool LoadObstacleConfig(const char* fullPath)
 			}
 		}
 	}
-	f.close(); return true;
+	f.close();
+	// Recarrega o SRV de preview com o sprite recem-carregado (se houver).
+	LoadSRV(editorObstacleConfig.texturePath, &editorObstacleTexture);
+	return true;
 }
 
 // ==========================================
@@ -1010,6 +1194,23 @@ void RenderEditorBall()
 void RenderEditorStage()
 {
 	ImGui::Text("=== EDITOR DE STAGE ===");
+
+	// Toggle do modo demo: simula movimento dos blocos e disparos de projeteis
+	// para que o autor visualize como o estagio se comporta sem entrar em
+	// gameplay. Estado mantido na global g_editorStageDemoActive.
+	if (g_editorStageDemoActive) {
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+		if (ImGui::Button("[ DEMO ON  ] Parar##stage", ImVec2(-1, 0)))
+			g_editorStageDemoActive = false;
+		ImGui::PopStyleColor();
+	}
+	else {
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+		if (ImGui::Button("[ DEMO OFF ] Demonstrar##stage", ImVec2(-1, 0)))
+			g_editorStageDemoActive = true;
+		ImGui::PopStyleColor();
+	}
+	ImGui::TextDisabled("Demo: movimento dos blocos e disparos de projeteis.");
 	ImGui::Separator();
 
 	// Modo do stage
@@ -1064,6 +1265,7 @@ void RenderEditorStage()
 				const char* slash = strrchr(p, '\\');
 				const char* name = slash ? slash + 1 : p;
 				strncpy_s(po.displayName, 64, name, 63);
+				ResolvePreviewMeta(po);
 				stageObjects.push_back(po);
 			}
 		}
@@ -1075,6 +1277,7 @@ void RenderEditorStage()
 				strncpy_s(po.configFile, 256, p, 255);
 				const char* slash = strrchr(p, '\\'); const char* name = slash ? slash + 1 : p;
 				strncpy_s(po.displayName, 64, name, 63);
+				ResolvePreviewMeta(po);
 				stageObjects.push_back(po);
 			}
 		}
@@ -1086,6 +1289,7 @@ void RenderEditorStage()
 				strncpy_s(po.configFile, 256, p, 255);
 				const char* slash = strrchr(p, '\\'); const char* name = slash ? slash + 1 : p;
 				strncpy_s(po.displayName, 64, name, 63);
+				ResolvePreviewMeta(po);
 				stageObjects.push_back(po);
 			}
 		}
@@ -1097,6 +1301,7 @@ void RenderEditorStage()
 				strncpy_s(po.configFile, 256, p, 255);
 				const char* slash = strrchr(p, '\\'); const char* name = slash ? slash + 1 : p;
 				strncpy_s(po.displayName, 64, name, 63);
+				ResolvePreviewMeta(po);
 				stageObjects.push_back(po);
 			}
 		}
@@ -1398,6 +1603,52 @@ static void BossActionEditor(BossAction& a, int idx)
 	ImGui::PopID();
 }
 
+// Gera label descritivo da acao baseado no tipo e parametros relevantes.
+// Substitui o rotulo opaco "Acao N" por algo legivel ("Mover para (0.5, 0.2)",
+// "Disparo timed x8 — 2.0s", etc.), facilitando a navegacao do script.
+static void BossActionLabel(const BossAction& a, int idx, char* out, size_t outSz)
+{
+	switch (a.type) {
+	case BOSS_ACT_MOVE_TO:
+		sprintf_s(out, outSz, "%d. Mover para (%.2f, %.2f) vel %.3f",
+			idx + 1, a.targetX, a.targetY, a.speed);
+		break;
+	case BOSS_ACT_TELEPORT:
+		sprintf_s(out, outSz, "%d. Teleporte para (%.2f, %.2f)",
+			idx + 1, a.targetX, a.targetY);
+		break;
+	case BOSS_ACT_SHOOT_TIMED:
+		sprintf_s(out, outSz, "%d. Disparo timed x%d (padrao %d) — %.1fs",
+			idx + 1, a.bulletCount, a.bulletPattern, a.duration);
+		break;
+	case BOSS_ACT_SHOOT_FIXED_PTS:
+		sprintf_s(out, outSz, "%d. Disparo em %d pontos fixos — %.1fs",
+			idx + 1, a.fixedPointCount, a.duration);
+		break;
+	case BOSS_ACT_CHARGE_PLAYER:
+		sprintf_s(out, outSz, "%d. Carga no jogador (vel %.3f) — %.1fs",
+			idx + 1, a.speed, a.duration);
+		break;
+	case BOSS_ACT_WAIT:
+		sprintf_s(out, outSz, "%d. Esperar %.1fs", idx + 1, a.duration);
+		break;
+	case BOSS_ACT_SPAWN_MINION:
+		sprintf_s(out, outSz, "%d. Spawnar minion (padrao %d) em (%.2f, %.2f)",
+			idx + 1, a.minionPatternIndex, a.spawnX, a.spawnY);
+		break;
+	case BOSS_ACT_CHANGE_SPRITE:
+		sprintf_s(out, outSz, "%d. Trocar sprite", idx + 1);
+		break;
+	case BOSS_ACT_INVINCIBLE:
+		sprintf_s(out, outSz, "%d. Invencivel %s — %.1fs",
+			idx + 1, a.invincibleOn ? "ON" : "OFF", a.duration);
+		break;
+	default:
+		sprintf_s(out, outSz, "%d. Acao (tipo %d)", idx + 1, (int)a.type);
+		break;
+	}
+}
+
 static void BossScriptEditor(BossScript& script, const char* uid)
 {
 	ImGui::PushID(uid);
@@ -1406,7 +1657,7 @@ static void BossScriptEditor(BossScript& script, const char* uid)
 	ImGui::TextDisabled("0 = reinicia do inicio; N = pula para a acao N");
 
 	for (int i = 0; i < script.actionCount; i++) {
-		char label[32]; sprintf_s(label, "Acao %d", i + 1);
+		char label[96]; BossActionLabel(script.actions[i], i, label, sizeof(label));
 		bool open = ImGui::TreeNode((void*)(intptr_t)i, "%s", label);
 		ImGui::SameLine();
 		char remId[32]; sprintf_s(remId, "X##remact%d", i);
